@@ -4,7 +4,7 @@ CONF_PASSWORD = "password"
 CONF_POLL_INTERVAL = "poll_interval"
 DEFAULT_POLL_INTERVAL = 30
 
-VERSION = "0.1.12"
+VERSION = "0.1.13"
 
 # Default preset recipes. Each preset is editable via the options flow
 # (Settings → Devices → Extraflame → Configure). "enabled" toggles its
@@ -17,6 +17,19 @@ DEFAULT_PRESETS: dict[str, dict] = {
     "boost":   {"enabled": True, "power": 5, "target_temp": 24, "fan_mode": 2, "fan_speed": 6},
 }
 CONF_PRESETS = "presets"
+
+# HA-side auto-modulation: the stove itself never picks a power level
+# between P1 and P5 on its own. The user-set targetPower stays put
+# while WORK is active. This integration optionally drives targetPower
+# from the room/setpoint delta so HA emulates the missing continuous
+# modulation. Specialists discourage P1 (incomplete combustion, soot)
+# — the default floor is P2.
+CONF_AUTO_MIN_POWER = "auto_min_power"
+CONF_AUTO_MAX_POWER = "auto_max_power"
+CONF_AUTO_DEADBAND = "auto_deadband"
+DEFAULT_AUTO_MIN_POWER = 2
+DEFAULT_AUTO_MAX_POWER = 5
+DEFAULT_AUTO_DEADBAND = 0.3  # °C, avoids oscillation around thresholds
 
 # Mapping inspired by the Micronova mainboard state codes commonly seen on
 # Extraflame / La Nordica / MCZ / Ravelli pellet stoves. Verified on a

@@ -9,10 +9,16 @@ from homeassistant import config_entries
 from .api_client import ExtraflameAuthError, ExtraflameClient
 
 from .const import (
+    CONF_AUTO_DEADBAND,
+    CONF_AUTO_MAX_POWER,
+    CONF_AUTO_MIN_POWER,
     CONF_PASSWORD,
     CONF_POLL_INTERVAL,
     CONF_PRESETS,
     CONF_USERNAME,
+    DEFAULT_AUTO_DEADBAND,
+    DEFAULT_AUTO_MAX_POWER,
+    DEFAULT_AUTO_MIN_POWER,
     DEFAULT_POLL_INTERVAL,
     DEFAULT_PRESETS,
     DOMAIN,
@@ -94,7 +100,15 @@ class ExtraflameOptionsFlow(config_entries.OptionsFlow):
                     "fan_mode": int(user_input[f"{name}_fan_mode"]),
                     "fan_speed": int(user_input[f"{name}_fan_speed"]),
                 }
-            return self.async_create_entry(title="", data={CONF_PRESETS: new_presets})
+            return self.async_create_entry(
+                title="",
+                data={
+                    CONF_PRESETS: new_presets,
+                    CONF_AUTO_MIN_POWER: int(user_input[CONF_AUTO_MIN_POWER]),
+                    CONF_AUTO_MAX_POWER: int(user_input[CONF_AUTO_MAX_POWER]),
+                    CONF_AUTO_DEADBAND: float(user_input[CONF_AUTO_DEADBAND]),
+                },
+            )
 
         current = self._current()
         schema_dict: dict[Any, Any] = {}
@@ -113,4 +127,17 @@ class ExtraflameOptionsFlow(config_entries.OptionsFlow):
             schema_dict[vol.Required(f"{name}_fan_speed", default=p.get("fan_speed", 0))] = vol.All(
                 int, vol.Range(min=0, max=6)
             )
+        opts = self.config_entry.options
+        schema_dict[vol.Required(
+            CONF_AUTO_MIN_POWER,
+            default=opts.get(CONF_AUTO_MIN_POWER, DEFAULT_AUTO_MIN_POWER),
+        )] = vol.All(int, vol.Range(min=1, max=5))
+        schema_dict[vol.Required(
+            CONF_AUTO_MAX_POWER,
+            default=opts.get(CONF_AUTO_MAX_POWER, DEFAULT_AUTO_MAX_POWER),
+        )] = vol.All(int, vol.Range(min=1, max=5))
+        schema_dict[vol.Required(
+            CONF_AUTO_DEADBAND,
+            default=opts.get(CONF_AUTO_DEADBAND, DEFAULT_AUTO_DEADBAND),
+        )] = vol.All(vol.Coerce(float), vol.Range(min=0.0, max=2.0))
         return self.async_show_form(step_id="init", data_schema=vol.Schema(schema_dict))
