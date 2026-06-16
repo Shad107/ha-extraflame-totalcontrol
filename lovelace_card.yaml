@@ -49,12 +49,27 @@ cards:
         🔌 **Poêle hors tension** — module Wi-Fi injoignable. Les contrôles
         ci-dessous sont désactivés tant que le poêle n'est pas rebranché.
 
+  # Big visual thermostat for direct setpoint control. Drag the
+  # outer ring to change the target room temperature.
+  - type: thermostat
+    entity: climate.mon_poele
+    show_current_as_primary: false
+
+  # Compact tile with inline features: temperature slider,
+  # hvac mode (heat/off) and the user-edited presets.
   - type: tile
     entity: climate.mon_poele
     name: Climat
     color: orange
     tap_action:
       action: more-info
+    features:
+      - type: target-temperature
+      - type: climate-hvac-modes
+        hvac_modes: ["heat", "off"]
+      - type: climate-preset-modes
+        preset_modes: ["eco", "silence", "confort", "boost"]
+        style: icons
 
   - type: horizontal-stack
     cards:
