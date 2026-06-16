@@ -1,12 +1,30 @@
 # Extraflame TotalControl 2.0 — dashboard card template
 #
-# Paste this into a Manual card. The visual stove drawing comes from the
+# Paste into a Manual card. The visual stove drawing comes from the
 # `sensor.<stove>_visual` entity, which holds the inline SVG in its
-# `svg` attribute. Color and flames reflect machineState / power / online.
+# `svg` attribute. Color and flames reflect machineState / power /
+# online.
 #
 # Replace the entity IDs below with whatever HA assigned (typically
 # slugified from the stove name in TotalControl — "Mon poêle" →
 # "sensor.mon_poele_visual" etc.).
+#
+# === Option: hide the card when the stove is electrically off ===
+# If the Wi-Fi module is unplugged (= stove unplugged), the cloud
+# reports it as offline and `binary_sensor.<stove>_online` is OFF.
+# Wrap this whole vertical-stack in a conditional to hide the card in
+# that case:
+#
+#   type: conditional
+#   conditions:
+#     - entity: binary_sensor.mon_poele_online
+#       state: "on"
+#   card:
+#     type: vertical-stack
+#     cards: [ ...the rest of this file... ]
+#
+# Or use `compact` variant below (kept as a copy-paste block at the
+# bottom of this file).
 
 type: vertical-stack
 cards:
@@ -17,6 +35,16 @@ cards:
   - type: markdown
     content: |
       {{ state_attr('sensor.mon_poele_visual', 'svg') }}
+
+  - type: conditional
+    conditions:
+      - entity: binary_sensor.mon_poele_online
+        state: "off"
+    card:
+      type: markdown
+      content: |
+        🔌 **Poêle hors tension** — module Wi-Fi injoignable. Les contrôles
+        ci-dessous sont désactivés tant que le poêle n'est pas rebranché.
 
   - type: tile
     entity: climate.mon_poele
@@ -117,3 +145,32 @@ cards:
           service: climate.turn_off
           target:
             entity_id: climate.mon_poele
+
+# =============================================================
+# Variante compacte : carte masquée si le poêle est débranché.
+# Copie-colle CE bloc à la place de tout ce qui précède dans un
+# Manual card, et tu auras une carte qui disparaît entièrement de
+# la dashboard quand `binary_sensor.mon_poele_online` est OFF.
+# =============================================================
+#
+# type: conditional
+# conditions:
+#   - entity: binary_sensor.mon_poele_online
+#     state: "on"
+# card:
+#   type: vertical-stack
+#   cards:
+#     - type: heading
+#       heading: Poêle à granulés
+#       icon: mdi:stove
+#     - type: markdown
+#       content: |
+#         {{ state_attr('sensor.mon_poele_visual', 'svg') }}
+#     - type: tile
+#       entity: climate.mon_poele
+#       name: Climat
+#       color: orange
+#     - type: tile
+#       entity: select.mon_poele_power
+#       name: Puissance
+#       icon: mdi:fire
