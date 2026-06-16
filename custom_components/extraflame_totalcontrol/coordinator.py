@@ -43,6 +43,7 @@ class ExtraflameCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                 seconds=entry.data.get(CONF_POLL_INTERVAL, DEFAULT_POLL_INTERVAL)
             ),
         )
+        self.config_entry = entry
         self._client = ExtraflameClient(
             entry.data[CONF_USERNAME], entry.data[CONF_PASSWORD]
         )

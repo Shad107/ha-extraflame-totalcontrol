@@ -16,31 +16,32 @@ from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
 from .const import (
+    CONF_PRESETS,
+    DEFAULT_PRESETS,
     DOMAIN,
     MACHINE_STATE_COOLDOWN,
     MACHINE_STATE_OFF,
     MACHINE_STATE_PREHEAT,
     MACHINE_STATE_RUNNING,
+    PRESET_NAMES,
 )
 from .coordinator import ExtraflameCoordinator, stove_device_info
 
 OFF_STATES = MACHINE_STATE_OFF
-
-# Presets bundle a coherent triplet of (targetPower, targetRoomTemp,
-# mainFanMode[, mainFanSpeed]) so the user doesn't have to tune each
-# parameter individually for common scenarios.
-#
-# Mental model of fan-vs-target: higher target temperature → cosier,
-# quieter setup → fan stays auto/low; lower target → more circulation
-# wanted → fan auto suffices, no need to manually crank it. Boost is
-# the explicit "warm-up fast" override that drops to manual max fan.
-PRESETS: dict[str, dict[str, int]] = {
-    "eco":       {"targetPower": 1, "targetRoomTemp": 18, "mainFanMode": 1},
-    "silence":   {"targetPower": 2, "targetRoomTemp": 20, "mainFanMode": 1},
-    "confort":   {"targetPower": 3, "targetRoomTemp": 21, "mainFanMode": 1},
-    "boost":     {"targetPower": 5, "targetRoomTemp": 24, "mainFanMode": 2, "mainFanSpeed": 6},
-}
 PRESET_NONE = "none"
+
+
+def _recipe_from_options(p: dict) -> dict[str, int]:
+    """Translate an options-flow preset dict into a sendCommand payload."""
+    out: dict[str, int] = {
+        "targetPower": int(p["power"]),
+        "targetRoomTemp": float(p["target_temp"]),
+        "mainFanMode": int(p["fan_mode"]),
+    }
+    # Manual fan speed (mode == 2) gets pushed too; auto/off ignore it.
+    if int(p["fan_mode"]) >= 2:
+        out["mainFanSpeed"] = int(p["fan_speed"])
+    return out
 
 
 async def async_setup_entry(
@@ -66,7 +67,6 @@ class ExtraflameClimate(CoordinatorEntity[ExtraflameCoordinator], ClimateEntity)
         | ClimateEntityFeature.TURN_ON
         | ClimateEntityFeature.PRESET_MODE
     )
-    _attr_preset_modes = [PRESET_NONE, *PRESETS.keys()]
     _attr_min_temp = 5
     _attr_max_temp = 35
     _attr_target_temperature_step = 0.5
@@ -77,6 +77,15 @@ class ExtraflameClimate(CoordinatorEntity[ExtraflameCoordinator], ClimateEntity)
         stove = coordinator.data["stoves"][stove_id]["stove"]
         self._attr_device_info = stove_device_info(stove)
         self._attr_unique_id = f"extraflame_{stove_id}_climate"
+        # Re-render preset_modes when the user edits the options flow.
+        coordinator.config_entry.async_on_unload(
+            coordinator.config_entry.add_update_listener(self._async_options_changed)
+        )
+
+    async def _async_options_changed(self, hass, entry) -> None:  # noqa: ARG002
+        # The OptionsFlow updates entry.options in place; just push a
+        # state update so HA's frontend re-reads preset_modes.
+        self.async_write_ha_state()
 
     def _snap(self) -> dict[str, Any]:
         return (self.coordinator.data or {}).get("stoves", {}).get(self._stove_id, {})
@@ -146,6 +155,21 @@ class ExtraflameClimate(CoordinatorEntity[ExtraflameCoordinator], ClimateEntity)
     async def async_turn_off(self) -> None:
         await self.async_set_hvac_mode(HVACMode.OFF)
 
+    def _user_presets(self) -> dict[str, dict]:
+        opts = (
+            self.coordinator.config_entry.options.get(CONF_PRESETS)
+            if self.coordinator.config_entry
+            else None
+        ) or DEFAULT_PRESETS
+        # Force the canonical order of PRESET_NAMES (eco→silence→confort→boost).
+        return {n: opts.get(n, DEFAULT_PRESETS[n]) for n in PRESET_NAMES}
+
+    @property
+    def preset_modes(self) -> list[str]:
+        return [PRESET_NONE] + [
+            n for n, p in self._user_presets().items() if p.get("enabled", True)
+        ]
+
     @property
     def preset_mode(self) -> str:
         target_power = self._param("targetPower")
@@ -156,17 +180,19 @@ class ExtraflameClimate(CoordinatorEntity[ExtraflameCoordinator], ClimateEntity)
             return PRESET_NONE
         try:
             tp = int(float(target_power))
-            tr = int(float(target_room))
+            tr = float(target_room)
             fm = int(float(fan_mode))
             fs = int(float(fan_speed)) if fan_speed is not None else None
         except (TypeError, ValueError):
             return PRESET_NONE
-        for name, recipe in PRESETS.items():
+        for name, p in self._user_presets().items():
+            if not p.get("enabled", True):
+                continue
             if (
-                recipe.get("targetPower") == tp
-                and recipe.get("targetRoomTemp") == tr
-                and recipe.get("mainFanMode") == fm
-                and ("mainFanSpeed" not in recipe or recipe["mainFanSpeed"] == fs)
+                int(p["power"]) == tp
+                and abs(float(p["target_temp"]) - tr) < 0.5
+                and int(p["fan_mode"]) == fm
+                and (int(p["fan_mode"]) < 2 or int(p["fan_speed"]) == fs)
             ):
                 return name
         return PRESET_NONE
@@ -174,12 +200,11 @@ class ExtraflameClimate(CoordinatorEntity[ExtraflameCoordinator], ClimateEntity)
     async def async_set_preset_mode(self, preset_mode: str) -> None:
         if preset_mode == PRESET_NONE:
             return
-        recipe = PRESETS.get(preset_mode)
-        if not recipe:
+        presets = self._user_presets()
+        p = presets.get(preset_mode)
+        if not p or not p.get("enabled", True):
             return
-        # The cloud's sendCommand/settings accepts a dict — one round-trip
-        # is enough to push the whole preset at once.
         await self.coordinator._client.send_command(
-            self._stove_id, "settings", dict(recipe)
+            self._stove_id, "settings", _recipe_from_options(p)
         )
         await self.coordinator.async_request_refresh()

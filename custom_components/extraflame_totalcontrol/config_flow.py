@@ -11,14 +11,23 @@ from .api_client import ExtraflameAuthError, ExtraflameClient
 from .const import (
     CONF_PASSWORD,
     CONF_POLL_INTERVAL,
+    CONF_PRESETS,
     CONF_USERNAME,
     DEFAULT_POLL_INTERVAL,
+    DEFAULT_PRESETS,
     DOMAIN,
+    PRESET_NAMES,
 )
 
 
 class ExtraflameConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
     VERSION = 1
+
+    @staticmethod
+    def async_get_options_flow(
+        config_entry: config_entries.ConfigEntry,
+    ) -> "ExtraflameOptionsFlow":
+        return ExtraflameOptionsFlow(config_entry)
 
     async def async_step_user(
         self, user_input: dict[str, Any] | None = None
@@ -58,3 +67,50 @@ class ExtraflameConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             ),
             errors=errors,
         )
+
+
+FAN_MODE_CHOICES = {0: "Off", 1: "Auto", 2: "Manuel"}
+
+
+class ExtraflameOptionsFlow(config_entries.OptionsFlow):
+    """User-editable presets. One step, one form, all four presets shown."""
+
+    def __init__(self, config_entry: config_entries.ConfigEntry) -> None:
+        self.config_entry = config_entry
+
+    def _current(self) -> dict:
+        return self.config_entry.options.get(CONF_PRESETS) or DEFAULT_PRESETS
+
+    async def async_step_init(
+        self, user_input: dict[str, Any] | None = None
+    ) -> config_entries.ConfigFlowResult:
+        if user_input is not None:
+            new_presets: dict[str, dict] = {}
+            for name in PRESET_NAMES:
+                new_presets[name] = {
+                    "enabled": bool(user_input[f"{name}_enabled"]),
+                    "power": int(user_input[f"{name}_power"]),
+                    "target_temp": float(user_input[f"{name}_target_temp"]),
+                    "fan_mode": int(user_input[f"{name}_fan_mode"]),
+                    "fan_speed": int(user_input[f"{name}_fan_speed"]),
+                }
+            return self.async_create_entry(title="", data={CONF_PRESETS: new_presets})
+
+        current = self._current()
+        schema_dict: dict[Any, Any] = {}
+        for name in PRESET_NAMES:
+            p = current.get(name) or DEFAULT_PRESETS[name]
+            schema_dict[vol.Required(f"{name}_enabled", default=p.get("enabled", True))] = bool
+            schema_dict[vol.Required(f"{name}_power", default=p.get("power", 3))] = vol.All(
+                int, vol.Range(min=1, max=5)
+            )
+            schema_dict[vol.Required(f"{name}_target_temp", default=p.get("target_temp", 21))] = vol.All(
+                vol.Coerce(float), vol.Range(min=5, max=35)
+            )
+            schema_dict[vol.Required(f"{name}_fan_mode", default=p.get("fan_mode", 1))] = vol.In(
+                FAN_MODE_CHOICES
+            )
+            schema_dict[vol.Required(f"{name}_fan_speed", default=p.get("fan_speed", 0))] = vol.All(
+                int, vol.Range(min=0, max=6)
+            )
+        return self.async_show_form(step_id="init", data_schema=vol.Schema(schema_dict))

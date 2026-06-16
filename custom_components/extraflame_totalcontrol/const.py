@@ -4,7 +4,19 @@ CONF_PASSWORD = "password"
 CONF_POLL_INTERVAL = "poll_interval"
 DEFAULT_POLL_INTERVAL = 30
 
-VERSION = "0.1.7"
+VERSION = "0.1.8"
+
+# Default preset recipes. Each preset is editable via the options flow
+# (Settings → Devices → Extraflame → Configure). "enabled" toggles its
+# appearance in the climate.preset_modes list without losing the values.
+PRESET_NAMES = ("eco", "silence", "confort", "boost")
+DEFAULT_PRESETS: dict[str, dict] = {
+    "eco":     {"enabled": True, "power": 1, "target_temp": 18, "fan_mode": 1, "fan_speed": 0},
+    "silence": {"enabled": True, "power": 2, "target_temp": 20, "fan_mode": 1, "fan_speed": 0},
+    "confort": {"enabled": True, "power": 3, "target_temp": 21, "fan_mode": 1, "fan_speed": 0},
+    "boost":   {"enabled": True, "power": 5, "target_temp": 24, "fan_mode": 2, "fan_speed": 6},
+}
+CONF_PRESETS = "presets"
 
 # Mapping inspired by the Micronova mainboard state codes commonly seen on
 # Extraflame / La Nordica / MCZ / Ravelli pellet stoves. Verified on a

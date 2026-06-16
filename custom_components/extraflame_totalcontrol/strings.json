@@ -17,5 +17,35 @@
     "abort": {
       "already_configured": "This account is already configured"
     }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "Climate presets",
+        "description": "Edit each preset's power level (1..5), target room temperature (°C), main fan mode (0=Off, 1=Auto, 2=Manuel) and manual fan speed (0..6). Disable presets you don't want to see on `climate.preset_modes`. Changes apply immediately, the next time you pick the preset.",
+        "data": {
+          "eco_enabled": "Eco — enabled",
+          "eco_power": "Eco — power",
+          "eco_target_temp": "Eco — target temp",
+          "eco_fan_mode": "Eco — fan mode",
+          "eco_fan_speed": "Eco — fan speed",
+          "silence_enabled": "Silence — enabled",
+          "silence_power": "Silence — power",
+          "silence_target_temp": "Silence — target temp",
+          "silence_fan_mode": "Silence — fan mode",
+          "silence_fan_speed": "Silence — fan speed",
+          "confort_enabled": "Confort — enabled",
+          "confort_power": "Confort — power",
+          "confort_target_temp": "Confort — target temp",
+          "confort_fan_mode": "Confort — fan mode",
+          "confort_fan_speed": "Confort — fan speed",
+          "boost_enabled": "Boost — enabled",
+          "boost_power": "Boost — power",
+          "boost_target_temp": "Boost — target temp",
+          "boost_fan_mode": "Boost — fan mode",
+          "boost_fan_speed": "Boost — fan speed"
+        }
+      }
+    }
   }
 }
