@@ -55,6 +55,8 @@ async def async_setup_entry(
             )
         entities.append(ExtraflameVisualSensor(coordinator, stove_id))
         entities.append(ExtraflameStateLabelSensor(coordinator, stove_id))
+        entities.append(ExtraflameThermalDeltaSensor(coordinator, stove_id))
+        entities.append(ExtraflameModulationSensor(coordinator, stove_id))
     async_add_entities(entities)
 
 
@@ -190,3 +192,88 @@ class ExtraflameStateLabelSensor(CoordinatorEntity[ExtraflameCoordinator], Senso
         except (TypeError, ValueError):
             return None
         return MACHINE_STATE_LABELS.get(n, f"État {n}")
+
+
+def _param_float(coord, stove_id, key) -> float | None:
+    params = (coord.data or {}).get("stoves", {}).get(stove_id, {}).get("parameters") or {}
+    p = params.get(key)
+    if p is None or p.value is None:
+        return None
+    try:
+        v = float(p.value)
+    except (TypeError, ValueError):
+        return None
+    if v != v:  # NaN
+        return None
+    return v
+
+
+class ExtraflameThermalDeltaSensor(CoordinatorEntity[ExtraflameCoordinator], SensorEntity):
+    """Δ = targetRoomTemp − roomTemp.
+
+    Drives the stove's internal modulation logic:
+    Δ > +1.5 °C  → runs at full ``targetPower``
+    +0.5 < Δ < +1.5 → modulates progressively down
+    Δ < +0.5 °C  → modulation minimum (P1) or standby
+    Δ < −0.5 °C  → hysteresis trip → standby
+    The thresholds are model-tunable in the Micronova firmware; observe
+    yours from this sensor to dial in the presets.
+    """
+
+    _attr_has_entity_name = True
+    _attr_name = "Thermal delta"
+    _attr_icon = "mdi:thermometer-chevron-up"
+    _attr_device_class = SensorDeviceClass.TEMPERATURE
+    _attr_native_unit_of_measurement = UnitOfTemperature.CELSIUS
+    _attr_state_class = SensorStateClass.MEASUREMENT
+    _attr_suggested_display_precision = 1
+
+    def __init__(self, coordinator: ExtraflameCoordinator, stove_id: str) -> None:
+        super().__init__(coordinator)
+        self._stove_id = stove_id
+        self._attr_unique_id = f"extraflame_{stove_id}_thermal_delta"
+        stove = coordinator.data["stoves"][stove_id]["stove"]
+        self._attr_device_info = stove_device_info(stove)
+
+    @property
+    def native_value(self) -> float | None:
+        target = _param_float(self.coordinator, self._stove_id, "targetRoomTemp")
+        room = _param_float(self.coordinator, self._stove_id, "roomTemp")
+        if target is None or room is None:
+            return None
+        return round(target - room, 1)
+
+
+class ExtraflameModulationSensor(CoordinatorEntity[ExtraflameCoordinator], SensorEntity):
+    """Modulation = power / targetPower * 100.
+
+    ``targetPower`` is the **ceiling** set by the user / preset, not the
+    constant power the stove burns at. ``power`` is what the firmware
+    has chosen given the current Δ. The ratio is the live modulation
+    level expressed as a percentage of the ceiling.
+
+    0 % when standby, 100 % when running at the ceiling, anything in
+    between when modulating.
+    """
+
+    _attr_has_entity_name = True
+    _attr_name = "Modulation level"
+    _attr_icon = "mdi:gauge"
+    _attr_native_unit_of_measurement = "%"
+    _attr_state_class = SensorStateClass.MEASUREMENT
+    _attr_suggested_display_precision = 0
+
+    def __init__(self, coordinator: ExtraflameCoordinator, stove_id: str) -> None:
+        super().__init__(coordinator)
+        self._stove_id = stove_id
+        self._attr_unique_id = f"extraflame_{stove_id}_modulation_level"
+        stove = coordinator.data["stoves"][stove_id]["stove"]
+        self._attr_device_info = stove_device_info(stove)
+
+    @property
+    def native_value(self) -> float | None:
+        cur = _param_float(self.coordinator, self._stove_id, "power")
+        cap = _param_float(self.coordinator, self._stove_id, "targetPower")
+        if cur is None or cap is None or cap <= 0:
+            return None
+        return round(min(100.0, max(0.0, cur / cap * 100.0)), 0)
