@@ -34,7 +34,7 @@ cards:
 
   - type: markdown
     content: |
-      {{ state_attr('sensor.mon_poele_visual', 'svg') }}
+      {{ state_attr('sensor.mon_poele_visual', 'svg') | safe }}
 
   - type: conditional
     conditions:
@@ -165,7 +165,7 @@ cards:
 #       icon: mdi:stove
 #     - type: markdown
 #       content: |
-#         {{ state_attr('sensor.mon_poele_visual', 'svg') }}
+#         {{ state_attr('sensor.mon_poele_visual', 'svg') | safe }}
 #     - type: tile
 #       entity: climate.mon_poele
 #       name: Climat
