@@ -20,6 +20,7 @@ from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
 from .const import DOMAIN
 from .coordinator import ExtraflameCoordinator
+from .visual import render_stove_svg
 
 SENSORS: tuple[tuple[str, str, str | None, str | None, str | None], ...] = (
     # (param_key, friendly suffix, unit, device_class, state_class)
@@ -45,12 +46,13 @@ async def async_setup_entry(
     async_add_entities: AddEntitiesCallback,
 ) -> None:
     coordinator: ExtraflameCoordinator = hass.data[DOMAIN][entry.entry_id]
-    entities: list[ExtraflameSensor] = []
+    entities: list[SensorEntity] = []
     for stove_id in coordinator.data.get("stoves", {}):
         for key, name, unit, device_class, state_class in SENSORS:
             entities.append(
                 ExtraflameSensor(coordinator, stove_id, key, name, unit, device_class, state_class)
             )
+        entities.append(ExtraflameVisualSensor(coordinator, stove_id))
     async_add_entities(entities)
 
 
@@ -86,3 +88,57 @@ class ExtraflameSensor(CoordinatorEntity[ExtraflameCoordinator], SensorEntity):
         if isinstance(v, float) and (v != v):  # NaN
             return None
         return v
+
+
+class ExtraflameVisualSensor(CoordinatorEntity[ExtraflameCoordinator], SensorEntity):
+    """Sensor whose value is the stove name and whose ``svg`` attribute
+    holds an inline SVG depicting the stove. The Lovelace markdown card
+    renders it via ``{{ state_attr('sensor.<stove>_visual', 'svg') }}``.
+    """
+
+    _attr_has_entity_name = True
+    _attr_name = "Visual"
+    _attr_icon = "mdi:stove"
+
+    def __init__(self, coordinator: ExtraflameCoordinator, stove_id: str) -> None:
+        super().__init__(coordinator)
+        self._stove_id = stove_id
+        self._attr_unique_id = f"extraflame_{stove_id}_visual"
+
+    def _snap(self) -> dict[str, Any]:
+        return (self.coordinator.data or {}).get("stoves", {}).get(self._stove_id, {})
+
+    def _param(self, key: str) -> Any:
+        params = self._snap().get("parameters") or {}
+        p = params.get(key)
+        if p is None:
+            return None
+        v = p.value
+        if isinstance(v, float) and (v != v):
+            return None
+        return v
+
+    @property
+    def native_value(self) -> str | None:
+        s = self._snap().get("stove")
+        return s.name if s else None
+
+    @property
+    def extra_state_attributes(self) -> dict[str, Any]:
+        stove = self._snap().get("stove")
+        ms = self._param("machineState")
+        target_p = self._param("targetPower")
+        try:
+            cur_pow = int(float(target_p)) if target_p is not None else 0
+        except (TypeError, ValueError):
+            cur_pow = 0
+        svg = render_stove_svg(
+            name=stove.name if stove else "",
+            online=bool(self._snap().get("online")),
+            machine_state=int(ms) if ms is not None else None,
+            current_power=cur_pow,
+            room_temp=self._param("roomTemp"),
+            target_room_temp=self._param("targetRoomTemp"),
+            smoke_temp=self._param("smokeTemp"),
+        )
+        return {"svg": svg}

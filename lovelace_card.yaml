@@ -1,0 +1,119 @@
+# Extraflame TotalControl 2.0 — dashboard card template
+#
+# Paste this into a Manual card. The visual stove drawing comes from the
+# `sensor.<stove>_visual` entity, which holds the inline SVG in its
+# `svg` attribute. Color and flames reflect machineState / power / online.
+#
+# Replace the entity IDs below with whatever HA assigned (typically
+# slugified from the stove name in TotalControl — "Mon poêle" →
+# "sensor.mon_poele_visual" etc.).
+
+type: vertical-stack
+cards:
+  - type: heading
+    heading: Poêle à granulés
+    icon: mdi:stove
+
+  - type: markdown
+    content: |
+      {{ state_attr('sensor.mon_poele_visual', 'svg') }}
+
+  - type: tile
+    entity: climate.mon_poele
+    name: Climat
+    color: orange
+    tap_action:
+      action: more-info
+
+  - type: horizontal-stack
+    cards:
+      - type: tile
+        entity: select.mon_poele_power
+        name: Puissance
+        icon: mdi:fire
+      - type: tile
+        entity: sensor.mon_poele_room_temperature
+        name: Ambiance
+        color: amber
+      - type: tile
+        entity: sensor.mon_poele_smoke_temperature
+        name: Fumée
+        color: red
+
+  - type: entities
+    title: Telemetry
+    show_header_toggle: false
+    entities:
+      - entity: binary_sensor.mon_poele_online
+        name: Connecté
+      - entity: sensor.mon_poele_current_power
+        name: Puissance courante
+      - entity: sensor.mon_poele_target_room_temperature
+        name: Température cible
+      - entity: sensor.mon_poele_main_fan_speed
+        name: Vitesse ventilation
+      - entity: sensor.mon_poele_machine_state
+        name: État machine (brut)
+      - entity: binary_sensor.mon_poele_alarm
+        name: Alarme
+
+  - type: conditional
+    conditions:
+      - entity: binary_sensor.mon_poele_smoke_temperature_warning
+        state: "on"
+    card:
+      type: markdown
+      content: |
+        ⚠️ **Température fumée élevée** — au-delà de 400 °C les tuyaux peuvent
+        devenir rouges (risque incendie). Vérifie le tirage et l'apport d'air.
+
+  - type: conditional
+    conditions:
+      - entity: binary_sensor.mon_poele_alarm
+        state: "on"
+    card:
+      type: markdown
+      content: |
+        🚨 **Alarme poêle active**
+        Code : {{ state_attr('binary_sensor.mon_poele_alarm', 'alarm_code') }}
+
+  - type: horizontal-stack
+    cards:
+      - type: button
+        name: P1
+        icon: mdi:numeric-1-circle
+        tap_action:
+          action: call-service
+          service: select.select_option
+          target:
+            entity_id: select.mon_poele_power
+          data:
+            option: P1
+      - type: button
+        name: P3
+        icon: mdi:numeric-3-circle
+        tap_action:
+          action: call-service
+          service: select.select_option
+          target:
+            entity_id: select.mon_poele_power
+          data:
+            option: P3
+      - type: button
+        name: P5
+        icon: mdi:numeric-5-circle
+        tap_action:
+          action: call-service
+          service: select.select_option
+          target:
+            entity_id: select.mon_poele_power
+          data:
+            option: P5
+      - type: button
+        name: OFF
+        icon: mdi:power
+        tap_action:
+          action: call-service
+          service: climate.turn_off
+          target:
+            entity_id: climate.mon_poele
