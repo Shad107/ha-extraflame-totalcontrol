@@ -20,6 +20,7 @@ from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
 from .const import DOMAIN, MACHINE_STATE_LABELS
 from .coordinator import ExtraflameCoordinator, stove_device_info
+from .models import resolve_model, RESOURCE_ID_TO_MODEL
 from .visual import render_stove_svg
 
 SENSORS: tuple[tuple[str, str, str | None, str | None, str | None], ...] = (
@@ -146,7 +147,15 @@ class ExtraflameVisualSensor(CoordinatorEntity[ExtraflameCoordinator], SensorEnt
             target_room_temp=self._param("targetRoomTemp"),
             smoke_temp=self._param("smokeTemp"),
         )
-        return {"svg": svg}
+        rid = stove.resource_id if stove else None
+        is_known_model = bool(rid and rid in RESOURCE_ID_TO_MODEL)
+        return {
+            "svg": svg,
+            "model": resolve_model(rid) if is_known_model else None,
+            "manufacturer": "La Nordica-Extraflame",
+            "resource_id": rid,
+            "stove_name": stove.name if stove else None,
+        }
 
 
 class ExtraflameStateLabelSensor(CoordinatorEntity[ExtraflameCoordinator], SensorEntity):

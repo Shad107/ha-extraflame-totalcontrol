@@ -10,7 +10,7 @@
  * Compatible with Home Assistant >= 2024.1.
  */
 
-const CARD_VERSION = "0.1.3";
+const CARD_VERSION = "0.1.6";
 
 class ExtraflameStoveCard extends HTMLElement {
   setConfig(config) {
@@ -30,15 +30,23 @@ class ExtraflameStoveCard extends HTMLElement {
         `<div class="error">Entity not found: <code>${entity}</code></div>`;
       return;
     }
-    const svg = state.attributes && state.attributes.svg ? state.attributes.svg : '';
+    const attrs = state.attributes || {};
+    const svg = attrs.svg || '';
+    // Title priority:
+    //   1. explicit config.title (user wins)
+    //   2. model name from the cloud resource_id mapping (e.g. "Teodora Evo")
+    //   3. user-given stove name from the TotalControl app
+    //   4. friendly_name as last resort (may include the platform suffix)
     const title =
       this._config.title !== undefined
         ? this._config.title
-        : state.attributes && state.attributes.friendly_name
-          ? state.attributes.friendly_name
-          : '';
+        : attrs.model || attrs.stove_name || attrs.friendly_name || '';
+    const subtitle = attrs.model && attrs.stove_name && attrs.stove_name !== attrs.model
+      ? attrs.stove_name
+      : '';
     this._body.innerHTML = `
       ${title ? `<div class="title">${title}</div>` : ''}
+      ${subtitle ? `<div class="subtitle">${subtitle}</div>` : ''}
       <div class="svg-wrap">${svg || '<div class="empty">No SVG available</div>'}</div>
     `;
     this._wireClick();
@@ -55,6 +63,11 @@ class ExtraflameStoveCard extends HTMLElement {
         font-size: 1.05em;
         font-weight: 500;
         color: var(--primary-text-color);
+      }
+      .subtitle {
+        padding: 0 16px 4px;
+        font-size: 0.85em;
+        color: var(--secondary-text-color);
       }
       .svg-wrap {
         padding: 8px 8px 12px;
