@@ -3,12 +3,20 @@
 Builds an inline SVG depicting the stove with a flame proportional to
 the current power level and a color shift driven by the machine state
 and online/connectivity. The SVG is published as the ``svg`` attribute
-of the visual sensor so a Markdown card can render it without any
-JS resource.
+of the visual sensor and rendered by the bundled
+``custom:extraflame-stove-card`` Lovelace card.
 """
 from __future__ import annotations
 
-OFF_MACHINE_STATES = {0}
+from .const import (
+    MACHINE_STATE_COOLDOWN,
+    MACHINE_STATE_LABELS,
+    MACHINE_STATE_OFF,
+    MACHINE_STATE_PREHEAT,
+    MACHINE_STATE_RUNNING,
+)
+
+OFF_MACHINE_STATES = MACHINE_STATE_OFF
 
 
 def _state_color(machine_state: int | None, online: bool) -> tuple[str, str]:
@@ -17,7 +25,25 @@ def _state_color(machine_state: int | None, online: bool) -> tuple[str, str]:
         return ("#1a1a1a", "#555")
     if machine_state is None or int(machine_state) in OFF_MACHINE_STATES:
         return ("#202020", "#888")
+    s = int(machine_state)
+    if s in MACHINE_STATE_PREHEAT:
+        return ("#2a1408", "#f59e0b")  # amber for startup
+    if s in MACHINE_STATE_RUNNING:
+        return ("#3a1a08", "#ff7a18")  # full orange when running
+    if s in MACHINE_STATE_COOLDOWN:
+        return ("#221208", "#d97706")  # darker amber on cooldown
     return ("#3a1a08", "#ff7a18")
+
+
+def _status_label(machine_state: int | None, online: bool) -> str:
+    if not online:
+        return "OFFLINE"
+    if machine_state is None:
+        return "—"
+    s = int(machine_state)
+    if s in MACHINE_STATE_OFF:
+        return "OFF"
+    return MACHINE_STATE_LABELS.get(s, f"État {s}").upper()
 
 
 def _flame_paths(power: int) -> str:
@@ -70,9 +96,7 @@ def render_stove_svg(
             return "—"
         return f"{v:.1f}{unit}"
 
-    status_label = "OFFLINE" if not online else (
-        "OFF" if machine_state is None or int(machine_state) in OFF_MACHINE_STATES else "ON"
-    )
+    status_label = _status_label(machine_state, online)
 
     return f'''<svg viewBox="0 0 200 320" xmlns="http://www.w3.org/2000/svg" style="max-width:280px;display:block;margin:0 auto;">
   <!-- top vent / lid -->
@@ -81,8 +105,6 @@ def render_stove_svg(
   <rect x="55" y="6" width="90" height="16" rx="4" fill="#1a1a1a"/>
   <!-- body -->
   <rect x="20" y="35" width="160" height="220" rx="14" fill="#1a1a1a" stroke="{accent}" stroke-width="2"/>
-  <!-- name -->
-  <text x="100" y="50" text-anchor="middle" fill="#e8e8e8" font-family="system-ui,sans-serif" font-size="9">{name}</text>
   <!-- window frame -->
   <rect x="36" y="65" width="128" height="120" rx="8" fill="#0d0d0d" stroke="{accent}" stroke-width="1.5"/>
   <!-- window background -->
@@ -91,8 +113,8 @@ def render_stove_svg(
   <g opacity="{0.95 if online and current_power > 0 else 0.0}">{flames}</g>
   <!-- ash bed -->
   <ellipse cx="100" cy="180" rx="50" ry="6" fill="#2a2a2a"/>
-  <!-- status pill -->
-  <rect x="60" y="195" width="80" height="16" rx="8" fill="{accent}" opacity="0.25"/>
+  <!-- status pill (wider to fit longer state labels like "Stabilisation") -->
+  <rect x="30" y="195" width="140" height="16" rx="8" fill="{accent}" opacity="0.25"/>
   <text x="100" y="206" text-anchor="middle" font-family="system-ui,sans-serif" font-size="10" font-weight="600" fill="{accent}">{status_label}</text>
   <!-- temps -->
   <text x="40" y="232" font-family="system-ui,sans-serif" font-size="10" fill="#bbb">Room</text>

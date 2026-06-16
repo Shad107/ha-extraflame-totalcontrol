@@ -15,10 +15,16 @@ from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
-from .const import DOMAIN
+from .const import (
+    DOMAIN,
+    MACHINE_STATE_COOLDOWN,
+    MACHINE_STATE_OFF,
+    MACHINE_STATE_PREHEAT,
+    MACHINE_STATE_RUNNING,
+)
 from .coordinator import ExtraflameCoordinator, stove_device_info
 
-OFF_STATES = {0}
+OFF_STATES = MACHINE_STATE_OFF
 
 
 async def async_setup_entry(
@@ -84,10 +90,20 @@ class ExtraflameClimate(CoordinatorEntity[ExtraflameCoordinator], ClimateEntity)
 
     @property
     def hvac_action(self) -> HVACAction:
+        ms = self._param("machineState")
         power = self._param("power")
-        if power is None:
+        if ms is None:
             return HVACAction.OFF
-        return HVACAction.HEATING if float(power) > 0 else HVACAction.IDLE
+        s = int(ms)
+        if s in MACHINE_STATE_OFF:
+            return HVACAction.OFF
+        if s in MACHINE_STATE_PREHEAT:
+            return HVACAction.PREHEATING
+        if s in MACHINE_STATE_RUNNING and power is not None and float(power) > 0:
+            return HVACAction.HEATING
+        if s in MACHINE_STATE_COOLDOWN:
+            return HVACAction.IDLE
+        return HVACAction.IDLE
 
     @property
     def available(self) -> bool:

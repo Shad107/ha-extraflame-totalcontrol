@@ -18,7 +18,7 @@ from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
-from .const import DOMAIN
+from .const import DOMAIN, MACHINE_STATE_LABELS
 from .coordinator import ExtraflameCoordinator, stove_device_info
 from .visual import render_stove_svg
 
@@ -53,6 +53,7 @@ async def async_setup_entry(
                 ExtraflameSensor(coordinator, stove_id, key, name, unit, device_class, state_class)
             )
         entities.append(ExtraflameVisualSensor(coordinator, stove_id))
+        entities.append(ExtraflameStateLabelSensor(coordinator, stove_id))
     async_add_entities(entities)
 
 
@@ -146,3 +147,37 @@ class ExtraflameVisualSensor(CoordinatorEntity[ExtraflameCoordinator], SensorEnt
             smoke_temp=self._param("smokeTemp"),
         )
         return {"svg": svg}
+
+
+class ExtraflameStateLabelSensor(CoordinatorEntity[ExtraflameCoordinator], SensorEntity):
+    """Human-readable state of the stove (Off / Allumage / Running / …).
+
+    Sits next to the raw ``machine_state`` int sensor and translates it
+    via :data:`MACHINE_STATE_LABELS`. Codes outside the map fall back to
+    ``État N`` so the user sees the raw value while we get more samples.
+    """
+
+    _attr_has_entity_name = True
+    _attr_name = "State"
+    _attr_icon = "mdi:state-machine"
+    _attr_device_class = SensorDeviceClass.ENUM
+    _attr_options = list(MACHINE_STATE_LABELS.values())
+
+    def __init__(self, coordinator: ExtraflameCoordinator, stove_id: str) -> None:
+        super().__init__(coordinator)
+        self._stove_id = stove_id
+        self._attr_unique_id = f"extraflame_{stove_id}_state_label"
+        stove = coordinator.data["stoves"][stove_id]["stove"]
+        self._attr_device_info = stove_device_info(stove)
+
+    @property
+    def native_value(self) -> str | None:
+        params = (self.coordinator.data or {}).get("stoves", {}).get(self._stove_id, {}).get("parameters") or {}
+        p = params.get("machineState")
+        if p is None or p.value is None:
+            return None
+        try:
+            n = int(float(p.value))
+        except (TypeError, ValueError):
+            return None
+        return MACHINE_STATE_LABELS.get(n, f"État {n}")
