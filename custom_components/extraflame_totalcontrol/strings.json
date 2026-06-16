@@ -1,0 +1,21 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "Extraflame TotalControl 2.0",
+        "data": {
+          "username": "Account email",
+          "password": "Password",
+          "poll_interval": "Poll interval (seconds)"
+        }
+      }
+    },
+    "error": {
+      "invalid_auth": "Invalid credentials",
+      "cannot_connect": "Cannot connect to appapi.extraflame.it"
+    },
+    "abort": {
+      "already_configured": "This account is already configured"
+    }
+  }
+}

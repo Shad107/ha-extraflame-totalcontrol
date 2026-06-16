@@ -1,0 +1,26 @@
+[build-system]
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "extraflame-totalcontrol"
+version = "0.1.0"
+description = "Python client + HA integration + Docker webapi for Extraflame TotalControl 2.0 cloud API"
+readme = "README.md"
+license = {text = "Apache-2.0"}
+requires-python = ">=3.10"
+authors = [{name = "Shad107"}]
+dependencies = [
+    "httpx>=0.27",
+]
+
+[project.optional-dependencies]
+docker = ["fastapi>=0.110", "uvicorn[standard]>=0.27"]
+dev = ["pytest>=7", "pytest-asyncio>=0.21", "respx>=0.20"]
+
+[project.urls]
+Homepage = "https://github.com/Shad107/ha-extraflame-totalcontrol"
+Issues = "https://github.com/Shad107/ha-extraflame-totalcontrol/issues"
+
+[tool.setuptools.packages.find]
+include = ["extraflame_totalcontrol*"]
