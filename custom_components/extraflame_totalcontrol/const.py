@@ -4,7 +4,7 @@ CONF_PASSWORD = "password"
 CONF_POLL_INTERVAL = "poll_interval"
 DEFAULT_POLL_INTERVAL = 30
 
-VERSION = "0.2.0"
+VERSION = "0.2.1"
 
 # Default preset recipes. Each preset is editable via the options flow
 # (Settings → Devices → Extraflame → Configure). "enabled" toggles its
@@ -43,6 +43,11 @@ CONF_HUMIDITY_SENSORS = "humidity_sensors"
 CONF_AGGREGATION_MODE = "aggregation_mode"
 AGGREGATION_MODES = ("weighted_avg", "min", "max", "stove_only")
 DEFAULT_AGGREGATION_MODE = "weighted_avg"
+
+# Outdoor temperature — single source. Used to compute the
+# indoor/outdoor delta that drives thermal-loss estimates and
+# anticipatory heating logic (v0.3.0+).
+CONF_OUTDOOR_TEMP_SENSOR = "outdoor_temp_sensor"
 
 # Mapping inspired by the Micronova mainboard state codes commonly seen on
 # Extraflame / La Nordica / MCZ / Ravelli pellet stoves. Verified on a

@@ -27,6 +27,7 @@ from .const import (
     CONF_AUTO_MAX_POWER,
     CONF_AUTO_MIN_POWER,
     CONF_HUMIDITY_SENSORS,
+    CONF_OUTDOOR_TEMP_SENSOR,
     CONF_PASSWORD,
     CONF_POLL_INTERVAL,
     CONF_TEMP_SENSORS,
@@ -217,6 +218,28 @@ class ExtraflameCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         if not readings:
             return None, breakdown
         return round(sum(readings) / len(readings), 1), breakdown
+
+    def outdoor_temperature(self) -> float | None:
+        opts = self.config_entry.options if self.config_entry else {}
+        ent = opts.get(CONF_OUTDOOR_TEMP_SENSOR)
+        if not ent:
+            return None
+        return self._read_state_value(ent)
+
+    def indoor_outdoor_delta(self, stove_id: str) -> float | None:
+        """Δ = T_aggregate_room − T_outdoor.
+
+        Positive = it's warmer inside than outside (the normal heating
+        season case). The magnitude of this delta drives heat loss
+        through the building envelope: large delta → faster cooling
+        when the stove modulates down. Foundation for the v0.3.0 RC
+        thermal model fit.
+        """
+        indoor, _ = self.aggregate_room_temperature(stove_id)
+        outdoor = self.outdoor_temperature()
+        if indoor is None or outdoor is None:
+            return None
+        return round(indoor - outdoor, 1)
 
     async def async_close(self) -> None:
         await self._client.close()

@@ -59,6 +59,8 @@ async def async_setup_entry(
         entities.append(ExtraflameBurnIntensitySensor(coordinator, stove_id))
         entities.append(ExtraflameAggregateTempSensor(coordinator, stove_id))
         entities.append(ExtraflameAggregateHumiditySensor(coordinator, stove_id))
+        entities.append(ExtraflameOutdoorTempSensor(coordinator, stove_id))
+        entities.append(ExtraflameIndoorOutdoorDeltaSensor(coordinator, stove_id))
     async_add_entities(entities)
 
 
@@ -375,5 +377,69 @@ class ExtraflameAggregateHumiditySensor(CoordinatorEntity[ExtraflameCoordinator]
             "sources": breakdown,
             "input_count": sum(1 for x in breakdown.values() if x is not None),
         }
+
+
+class ExtraflameOutdoorTempSensor(CoordinatorEntity[ExtraflameCoordinator], SensorEntity):
+    """Mirror of the user-picked outdoor temperature sensor.
+
+    Exposed under the stove device for two reasons:
+    - keeps the thermal context on the same Lovelace card
+    - the v0.3.0 inertia learner reads it via a stable entity_id
+      regardless of the underlying source (Netatmo today, Tado outdoor
+      tomorrow, Météo France as fallback)
+    """
+
+    _attr_has_entity_name = True
+    _attr_name = "Outdoor temperature"
+    _attr_icon = "mdi:home-thermometer-outline"
+    _attr_device_class = SensorDeviceClass.TEMPERATURE
+    _attr_native_unit_of_measurement = UnitOfTemperature.CELSIUS
+    _attr_state_class = SensorStateClass.MEASUREMENT
+    _attr_suggested_display_precision = 1
+
+    def __init__(self, coordinator: ExtraflameCoordinator, stove_id: str) -> None:
+        super().__init__(coordinator)
+        self._stove_id = stove_id
+        self._attr_unique_id = f"extraflame_{stove_id}_outdoor_temperature"
+        stove = coordinator.data["stoves"][stove_id]["stove"]
+        self._attr_device_info = stove_device_info(stove)
+
+    @property
+    def native_value(self) -> float | None:
+        return self.coordinator.outdoor_temperature()
+
+
+class ExtraflameIndoorOutdoorDeltaSensor(
+    CoordinatorEntity[ExtraflameCoordinator], SensorEntity
+):
+    """Δ = aggregate indoor temp − outdoor temp.
+
+    The thermodynamic driver of heat loss through the building
+    envelope. Used in v0.3.0 to fit the first-order RC model
+    (dT_indoor/dt = −Δ/τ + heating_input/C), and in v0.4.0 to predict
+    when to start the stove ahead of a cold snap.
+
+    Positive in winter, can go negative on warm sunny days when the
+    sun warms the outdoor sensor faster than the room.
+    """
+
+    _attr_has_entity_name = True
+    _attr_name = "Indoor-outdoor delta"
+    _attr_icon = "mdi:thermometer-minus"
+    _attr_device_class = SensorDeviceClass.TEMPERATURE
+    _attr_native_unit_of_measurement = UnitOfTemperature.CELSIUS
+    _attr_state_class = SensorStateClass.MEASUREMENT
+    _attr_suggested_display_precision = 1
+
+    def __init__(self, coordinator: ExtraflameCoordinator, stove_id: str) -> None:
+        super().__init__(coordinator)
+        self._stove_id = stove_id
+        self._attr_unique_id = f"extraflame_{stove_id}_indoor_outdoor_delta"
+        stove = coordinator.data["stoves"][stove_id]["stove"]
+        self._attr_device_info = stove_device_info(stove)
+
+    @property
+    def native_value(self) -> float | None:
+        return self.coordinator.indoor_outdoor_delta(self._stove_id)
 
 

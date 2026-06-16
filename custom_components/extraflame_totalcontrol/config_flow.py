@@ -17,6 +17,7 @@ from .const import (
     CONF_AUTO_MAX_POWER,
     CONF_AUTO_MIN_POWER,
     CONF_HUMIDITY_SENSORS,
+    CONF_OUTDOOR_TEMP_SENSOR,
     CONF_PASSWORD,
     CONF_POLL_INTERVAL,
     CONF_PRESETS,
@@ -119,6 +120,7 @@ class ExtraflameOptionsFlow(config_entries.OptionsFlow):
                     CONF_AGGREGATION_MODE: user_input.get(
                         CONF_AGGREGATION_MODE, DEFAULT_AGGREGATION_MODE
                     ),
+                    CONF_OUTDOOR_TEMP_SENSOR: user_input.get(CONF_OUTDOOR_TEMP_SENSOR) or None,
                 },
             )
 
@@ -181,5 +183,19 @@ class ExtraflameOptionsFlow(config_entries.OptionsFlow):
             CONF_AGGREGATION_MODE,
             default=opts.get(CONF_AGGREGATION_MODE, DEFAULT_AGGREGATION_MODE),
         )] = vol.In(list(AGGREGATION_MODES))
+
+        # Outdoor temperature — single source for v0.3.0 RC model fit
+        # and v0.4.0 anticipatory pre-heating. Default suggestion left
+        # empty so users with no outdoor probe stay opted-out.
+        schema_dict[vol.Optional(
+            CONF_OUTDOOR_TEMP_SENSOR,
+            default=opts.get(CONF_OUTDOOR_TEMP_SENSOR) or vol.UNDEFINED,
+        )] = selector.EntitySelector(
+            selector.EntitySelectorConfig(
+                domain="sensor",
+                device_class="temperature",
+                multiple=False,
+            )
+        )
 
         return self.async_show_form(step_id="init", data_schema=vol.Schema(schema_dict))
