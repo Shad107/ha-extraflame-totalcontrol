@@ -4,7 +4,7 @@ CONF_PASSWORD = "password"
 CONF_POLL_INTERVAL = "poll_interval"
 DEFAULT_POLL_INTERVAL = 30
 
-VERSION = "0.1.6"
+VERSION = "0.1.7"
 
 # Mapping inspired by the Micronova mainboard state codes commonly seen on
 # Extraflame / La Nordica / MCZ / Ravelli pellet stoves. Verified on a

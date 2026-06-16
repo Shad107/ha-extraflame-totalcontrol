@@ -26,6 +26,22 @@ from .coordinator import ExtraflameCoordinator, stove_device_info
 
 OFF_STATES = MACHINE_STATE_OFF
 
+# Presets bundle a coherent triplet of (targetPower, targetRoomTemp,
+# mainFanMode[, mainFanSpeed]) so the user doesn't have to tune each
+# parameter individually for common scenarios.
+#
+# Mental model of fan-vs-target: higher target temperature → cosier,
+# quieter setup → fan stays auto/low; lower target → more circulation
+# wanted → fan auto suffices, no need to manually crank it. Boost is
+# the explicit "warm-up fast" override that drops to manual max fan.
+PRESETS: dict[str, dict[str, int]] = {
+    "eco":       {"targetPower": 1, "targetRoomTemp": 18, "mainFanMode": 1},
+    "silence":   {"targetPower": 2, "targetRoomTemp": 20, "mainFanMode": 1},
+    "confort":   {"targetPower": 3, "targetRoomTemp": 21, "mainFanMode": 1},
+    "boost":     {"targetPower": 5, "targetRoomTemp": 24, "mainFanMode": 2, "mainFanSpeed": 6},
+}
+PRESET_NONE = "none"
+
 
 async def async_setup_entry(
     hass: HomeAssistant,
@@ -45,8 +61,12 @@ class ExtraflameClimate(CoordinatorEntity[ExtraflameCoordinator], ClimateEntity)
     _attr_temperature_unit = UnitOfTemperature.CELSIUS
     _attr_hvac_modes = [HVACMode.HEAT, HVACMode.OFF]
     _attr_supported_features = (
-        ClimateEntityFeature.TARGET_TEMPERATURE | ClimateEntityFeature.TURN_OFF | ClimateEntityFeature.TURN_ON
+        ClimateEntityFeature.TARGET_TEMPERATURE
+        | ClimateEntityFeature.TURN_OFF
+        | ClimateEntityFeature.TURN_ON
+        | ClimateEntityFeature.PRESET_MODE
     )
+    _attr_preset_modes = [PRESET_NONE, *PRESETS.keys()]
     _attr_min_temp = 5
     _attr_max_temp = 35
     _attr_target_temperature_step = 0.5
@@ -125,3 +145,41 @@ class ExtraflameClimate(CoordinatorEntity[ExtraflameCoordinator], ClimateEntity)
 
     async def async_turn_off(self) -> None:
         await self.async_set_hvac_mode(HVACMode.OFF)
+
+    @property
+    def preset_mode(self) -> str:
+        target_power = self._param("targetPower")
+        target_room = self._param("targetRoomTemp")
+        fan_mode = self._param("mainFanMode")
+        fan_speed = self._param("mainFanSpeed")
+        if any(v is None for v in (target_power, target_room, fan_mode)):
+            return PRESET_NONE
+        try:
+            tp = int(float(target_power))
+            tr = int(float(target_room))
+            fm = int(float(fan_mode))
+            fs = int(float(fan_speed)) if fan_speed is not None else None
+        except (TypeError, ValueError):
+            return PRESET_NONE
+        for name, recipe in PRESETS.items():
+            if (
+                recipe.get("targetPower") == tp
+                and recipe.get("targetRoomTemp") == tr
+                and recipe.get("mainFanMode") == fm
+                and ("mainFanSpeed" not in recipe or recipe["mainFanSpeed"] == fs)
+            ):
+                return name
+        return PRESET_NONE
+
+    async def async_set_preset_mode(self, preset_mode: str) -> None:
+        if preset_mode == PRESET_NONE:
+            return
+        recipe = PRESETS.get(preset_mode)
+        if not recipe:
+            return
+        # The cloud's sendCommand/settings accepts a dict — one round-trip
+        # is enough to push the whole preset at once.
+        await self.coordinator._client.send_command(
+            self._stove_id, "settings", dict(recipe)
+        )
+        await self.coordinator.async_request_refresh()

@@ -18,7 +18,7 @@ from .coordinator import ExtraflameCoordinator
 from .frontend_setup import JSModuleRegistration
 
 _LOGGER = logging.getLogger(__name__)
-PLATFORMS = ["sensor", "binary_sensor", "climate", "select"]
+PLATFORMS = ["sensor", "binary_sensor", "climate", "select", "number"]
 
 
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
