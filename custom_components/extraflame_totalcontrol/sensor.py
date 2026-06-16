@@ -57,6 +57,8 @@ async def async_setup_entry(
         entities.append(ExtraflameStateLabelSensor(coordinator, stove_id))
         entities.append(ExtraflameThermalDeltaSensor(coordinator, stove_id))
         entities.append(ExtraflameBurnIntensitySensor(coordinator, stove_id))
+        entities.append(ExtraflameAggregateTempSensor(coordinator, stove_id))
+        entities.append(ExtraflameAggregateHumiditySensor(coordinator, stove_id))
     async_add_entities(entities)
 
 
@@ -292,5 +294,86 @@ class ExtraflameBurnIntensitySensor(CoordinatorEntity[ExtraflameCoordinator], Se
         if cur is None or cap is None or cap <= 0:
             return None
         return round(min(100.0, max(0.0, cur / cap * 100.0)), 0)
+
+
+class ExtraflameAggregateTempSensor(CoordinatorEntity[ExtraflameCoordinator], SensorEntity):
+    """Multi-source room temperature seen by the stove.
+
+    Combines the stove's built-in probe (``roomTemp``) with any external
+    HA temperature sensors the user picked from the Options page. The
+    auto-modulation algorithm uses this value instead of the lone
+    embedded probe — which sits close enough to the burner to read
+    biased upward.
+
+    The ``sources`` attribute reports each input value so the dashboard
+    can show "Salon 21.3 °C · Cuisine 20.1 °C · Poêle 22.7 °C".
+    """
+
+    _attr_has_entity_name = True
+    _attr_name = "Aggregate room temperature"
+    _attr_icon = "mdi:thermometer-lines"
+    _attr_device_class = SensorDeviceClass.TEMPERATURE
+    _attr_native_unit_of_measurement = UnitOfTemperature.CELSIUS
+    _attr_state_class = SensorStateClass.MEASUREMENT
+    _attr_suggested_display_precision = 1
+
+    def __init__(self, coordinator: ExtraflameCoordinator, stove_id: str) -> None:
+        super().__init__(coordinator)
+        self._stove_id = stove_id
+        self._attr_unique_id = f"extraflame_{stove_id}_aggregate_room_temp"
+        stove = coordinator.data["stoves"][stove_id]["stove"]
+        self._attr_device_info = stove_device_info(stove)
+
+    @property
+    def native_value(self) -> float | None:
+        v, _ = self.coordinator.aggregate_room_temperature(self._stove_id)
+        return v
+
+    @property
+    def extra_state_attributes(self) -> dict:
+        v, breakdown = self.coordinator.aggregate_room_temperature(self._stove_id)
+        mode = self.coordinator._aggregation_mode()
+        return {
+            "mode": mode,
+            "sources": breakdown,
+            "input_count": sum(1 for x in breakdown.values() if x is not None),
+        }
+
+
+class ExtraflameAggregateHumiditySensor(CoordinatorEntity[ExtraflameCoordinator], SensorEntity):
+    """Average humidity across the externally-selected humidity sensors.
+
+    Not used to drive the stove (no humidity input on the cloud API)
+    but exposed for dashboards and for future automations (e.g. boost
+    when the room is dry, eco when comfort RH is reached).
+    """
+
+    _attr_has_entity_name = True
+    _attr_name = "Aggregate room humidity"
+    _attr_icon = "mdi:water-percent"
+    _attr_device_class = SensorDeviceClass.HUMIDITY
+    _attr_native_unit_of_measurement = "%"
+    _attr_state_class = SensorStateClass.MEASUREMENT
+    _attr_suggested_display_precision = 0
+
+    def __init__(self, coordinator: ExtraflameCoordinator, stove_id: str) -> None:
+        super().__init__(coordinator)
+        self._stove_id = stove_id
+        self._attr_unique_id = f"extraflame_{stove_id}_aggregate_room_humidity"
+        stove = coordinator.data["stoves"][stove_id]["stove"]
+        self._attr_device_info = stove_device_info(stove)
+
+    @property
+    def native_value(self) -> float | None:
+        v, _ = self.coordinator.aggregate_room_humidity(self._stove_id)
+        return v
+
+    @property
+    def extra_state_attributes(self) -> dict:
+        v, breakdown = self.coordinator.aggregate_room_humidity(self._stove_id)
+        return {
+            "sources": breakdown,
+            "input_count": sum(1 for x in breakdown.values() if x is not None),
+        }
 
 

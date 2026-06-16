@@ -8,14 +8,21 @@ from homeassistant import config_entries
 
 from .api_client import ExtraflameAuthError, ExtraflameClient
 
+from homeassistant.helpers import selector
+
 from .const import (
+    AGGREGATION_MODES,
+    CONF_AGGREGATION_MODE,
     CONF_AUTO_DEADBAND,
     CONF_AUTO_MAX_POWER,
     CONF_AUTO_MIN_POWER,
+    CONF_HUMIDITY_SENSORS,
     CONF_PASSWORD,
     CONF_POLL_INTERVAL,
     CONF_PRESETS,
+    CONF_TEMP_SENSORS,
     CONF_USERNAME,
+    DEFAULT_AGGREGATION_MODE,
     DEFAULT_AUTO_DEADBAND,
     DEFAULT_AUTO_MAX_POWER,
     DEFAULT_AUTO_MIN_POWER,
@@ -107,6 +114,11 @@ class ExtraflameOptionsFlow(config_entries.OptionsFlow):
                     CONF_AUTO_MIN_POWER: int(user_input[CONF_AUTO_MIN_POWER]),
                     CONF_AUTO_MAX_POWER: int(user_input[CONF_AUTO_MAX_POWER]),
                     CONF_AUTO_DEADBAND: float(user_input[CONF_AUTO_DEADBAND]),
+                    CONF_TEMP_SENSORS: user_input.get(CONF_TEMP_SENSORS, []) or [],
+                    CONF_HUMIDITY_SENSORS: user_input.get(CONF_HUMIDITY_SENSORS, []) or [],
+                    CONF_AGGREGATION_MODE: user_input.get(
+                        CONF_AGGREGATION_MODE, DEFAULT_AGGREGATION_MODE
+                    ),
                 },
             )
 
@@ -140,4 +152,34 @@ class ExtraflameOptionsFlow(config_entries.OptionsFlow):
             CONF_AUTO_DEADBAND,
             default=opts.get(CONF_AUTO_DEADBAND, DEFAULT_AUTO_DEADBAND),
         )] = vol.All(vol.Coerce(float), vol.Range(min=0.0, max=2.0))
+
+        # ----- v0.2.0 sensor aggregation section -----
+        # Picker shows any sensor in HA with device_class temperature /
+        # humidity, grouped by area badge — so Tado TRV heads, Aqara
+        # probes, ESPHome customs, anything appears automatically.
+        schema_dict[vol.Optional(
+            CONF_TEMP_SENSORS,
+            default=opts.get(CONF_TEMP_SENSORS, []),
+        )] = selector.EntitySelector(
+            selector.EntitySelectorConfig(
+                domain="sensor",
+                device_class="temperature",
+                multiple=True,
+            )
+        )
+        schema_dict[vol.Optional(
+            CONF_HUMIDITY_SENSORS,
+            default=opts.get(CONF_HUMIDITY_SENSORS, []),
+        )] = selector.EntitySelector(
+            selector.EntitySelectorConfig(
+                domain="sensor",
+                device_class="humidity",
+                multiple=True,
+            )
+        )
+        schema_dict[vol.Required(
+            CONF_AGGREGATION_MODE,
+            default=opts.get(CONF_AGGREGATION_MODE, DEFAULT_AGGREGATION_MODE),
+        )] = vol.In(list(AGGREGATION_MODES))
+
         return self.async_show_form(step_id="init", data_schema=vol.Schema(schema_dict))

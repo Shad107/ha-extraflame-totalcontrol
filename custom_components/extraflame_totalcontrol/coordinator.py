@@ -21,12 +21,17 @@ from .api_client import (
 from .models import resolve_model
 
 from .const import (
+    AGGREGATION_MODES,
+    CONF_AGGREGATION_MODE,
     CONF_AUTO_DEADBAND,
     CONF_AUTO_MAX_POWER,
     CONF_AUTO_MIN_POWER,
+    CONF_HUMIDITY_SENSORS,
     CONF_PASSWORD,
     CONF_POLL_INTERVAL,
+    CONF_TEMP_SENSORS,
     CONF_USERNAME,
+    DEFAULT_AGGREGATION_MODE,
     DEFAULT_AUTO_DEADBAND,
     DEFAULT_AUTO_MAX_POWER,
     DEFAULT_AUTO_MIN_POWER,
@@ -103,15 +108,22 @@ class ExtraflameCoordinator(DataUpdateCoordinator[dict[str, Any]]):
     ) -> None:
         params = snapshot["stoves"][stove_id].get("parameters") or {}
         tr = params.get("targetRoomTemp")
-        rt = params.get("roomTemp")
         tp = params.get("targetPower")
-        if tr is None or rt is None or tp is None:
+        if tr is None or tp is None:
             return
         try:
-            delta = float(tr.value) - float(rt.value)
+            target_temp = float(tr.value)
             cur_target = int(float(tp.value))
         except (TypeError, ValueError, AttributeError):
             return
+        # Use the multi-source aggregate as the room temperature input
+        # so the auto-modulation reacts to the user's actual comfort
+        # zone (Tado salon + cuisine + …) and not to the probe sitting
+        # 30 cm from the burner.
+        room_temp, _ = self.aggregate_room_temperature(stove_id)
+        if room_temp is None:
+            return
+        delta = target_temp - room_temp
         min_p, max_p, _deadband = self._auto_bounds()
         new_target = self.compute_auto_power(delta, min_p, max_p)
         if new_target != cur_target:
@@ -121,6 +133,90 @@ class ExtraflameCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         if not self.data or stove_id not in self.data.get("stoves", {}):
             return
         await self._apply_auto_modulation_from_snapshot(stove_id, self.data)
+
+    # ----- multi-source temperature / humidity aggregation -----
+
+    def _read_state_value(self, entity_id: str) -> float | None:
+        state = self.hass.states.get(entity_id)
+        if state is None or state.state in (None, "unknown", "unavailable", ""):
+            return None
+        try:
+            v = float(state.state)
+        except (TypeError, ValueError):
+            return None
+        if v != v:  # NaN
+            return None
+        return v
+
+    def _selected_temp_sensors(self) -> list[str]:
+        opts = self.config_entry.options if self.config_entry else {}
+        v = opts.get(CONF_TEMP_SENSORS) or []
+        return list(v) if isinstance(v, (list, tuple)) else []
+
+    def _selected_humidity_sensors(self) -> list[str]:
+        opts = self.config_entry.options if self.config_entry else {}
+        v = opts.get(CONF_HUMIDITY_SENSORS) or []
+        return list(v) if isinstance(v, (list, tuple)) else []
+
+    def _aggregation_mode(self) -> str:
+        opts = self.config_entry.options if self.config_entry else {}
+        mode = opts.get(CONF_AGGREGATION_MODE, DEFAULT_AGGREGATION_MODE)
+        return mode if mode in AGGREGATION_MODES else DEFAULT_AGGREGATION_MODE
+
+    def aggregate_room_temperature(self, stove_id: str) -> tuple[float | None, dict[str, float | None]]:
+        """Return (aggregate_temp, breakdown_dict).
+
+        The stove's own ``roomTemp`` parameter is always included as one
+        of the inputs. Externally-selected temperature sensors are
+        pulled from hass.states.
+
+        ``mode``:
+        - ``stove_only``  : ignore externals, return stove probe only
+        - ``min``         : the coldest measurement wins (protective)
+        - ``max``         : the warmest measurement wins (comfort)
+        - ``weighted_avg``: equal-weight mean of all valid readings
+                            (default — stove probe is one vote among the
+                            external sensors)
+        """
+        breakdown: dict[str, float | None] = {}
+        snap = (self.data or {}).get("stoves", {}).get(stove_id, {})
+        params = snap.get("parameters") or {}
+        stove_p = params.get("roomTemp")
+        stove_v: float | None = None
+        if stove_p is not None and stove_p.value is not None:
+            try:
+                v = float(stove_p.value)
+                if v == v:
+                    stove_v = v
+            except (TypeError, ValueError):
+                pass
+        breakdown["stove"] = stove_v
+
+        mode = self._aggregation_mode()
+        if mode == "stove_only":
+            return stove_v, breakdown
+
+        for ent in self._selected_temp_sensors():
+            breakdown[ent] = self._read_state_value(ent)
+
+        readings = [v for v in breakdown.values() if v is not None]
+        if not readings:
+            return None, breakdown
+        if mode == "min":
+            return round(min(readings), 2), breakdown
+        if mode == "max":
+            return round(max(readings), 2), breakdown
+        # weighted_avg (equal weights for v0.2.0; per-sensor weights TODO v0.2.x)
+        return round(sum(readings) / len(readings), 2), breakdown
+
+    def aggregate_room_humidity(self, stove_id: str) -> tuple[float | None, dict[str, float | None]]:
+        breakdown: dict[str, float | None] = {}
+        for ent in self._selected_humidity_sensors():
+            breakdown[ent] = self._read_state_value(ent)
+        readings = [v for v in breakdown.values() if v is not None]
+        if not readings:
+            return None, breakdown
+        return round(sum(readings) / len(readings), 1), breakdown
 
     async def async_close(self) -> None:
         await self._client.close()

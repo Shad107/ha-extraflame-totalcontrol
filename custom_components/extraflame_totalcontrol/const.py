@@ -4,7 +4,7 @@ CONF_PASSWORD = "password"
 CONF_POLL_INTERVAL = "poll_interval"
 DEFAULT_POLL_INTERVAL = 30
 
-VERSION = "0.1.13"
+VERSION = "0.2.0"
 
 # Default preset recipes. Each preset is editable via the options flow
 # (Settings → Devices → Extraflame → Configure). "enabled" toggles its
@@ -30,6 +30,19 @@ CONF_AUTO_DEADBAND = "auto_deadband"
 DEFAULT_AUTO_MIN_POWER = 2
 DEFAULT_AUTO_MAX_POWER = 5
 DEFAULT_AUTO_DEADBAND = 0.3  # °C, avoids oscillation around thresholds
+
+# Multi-source sensor aggregation. Lets the integration pull temperature
+# and humidity readings from any sensor HA already knows about (Tado TRV
+# heads, Aqara, Z-Wave probes, ESPHome custom — anything with
+# device_class temperature or humidity). The aggregate becomes the input
+# to the auto-modulation algorithm instead of the stove's lone embedded
+# probe, which sits next to the appliance and is biased upward by
+# proximity to the fire.
+CONF_TEMP_SENSORS = "temp_sensors"
+CONF_HUMIDITY_SENSORS = "humidity_sensors"
+CONF_AGGREGATION_MODE = "aggregation_mode"
+AGGREGATION_MODES = ("weighted_avg", "min", "max", "stove_only")
+DEFAULT_AGGREGATION_MODE = "weighted_avg"
 
 # Mapping inspired by the Micronova mainboard state codes commonly seen on
 # Extraflame / La Nordica / MCZ / Ravelli pellet stoves. Verified on a
