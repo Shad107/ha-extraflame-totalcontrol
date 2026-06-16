@@ -18,6 +18,8 @@ from .api_client import (
     Stove,
 )
 
+from .models import resolve_model
+
 from .const import (
     CONF_PASSWORD,
     CONF_POLL_INTERVAL,
@@ -80,7 +82,8 @@ def stove_device_info(stove: Stove) -> DeviceInfo:
         identifiers=identifiers,
         connections=connections,
         manufacturer="La Nordica-Extraflame",
-        model=stove.type or "Pellet stove",
+        model=resolve_model(stove.resource_id),
+        model_id=stove.resource_id or None,
         name=stove.name or f"Extraflame {stove.id[:8]}",
         suggested_area="Salon",
     )
