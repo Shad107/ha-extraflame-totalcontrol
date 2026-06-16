@@ -211,14 +211,16 @@ def _param_float(coord, stove_id, key) -> float | None:
 class ExtraflameThermalDeltaSensor(CoordinatorEntity[ExtraflameCoordinator], SensorEntity):
     """Δ = targetRoomTemp − roomTemp.
 
-    Drives the stove's ON/OFF cycling: the firmware does NOT modulate
-    burn intensity between P1..P5 on its own — instead it runs at the
-    user-set ``targetPower`` when the room is below setpoint, then
-    drops to standby (machineState 9) once the setpoint is reached
-    plus a hysteresis margin.
+    Drives the stove's WORK ↔ MODULATION ↔ STAND BY transitions per
+    the Teodora Evo manual:
 
-    The actual hysteresis thresholds vary by model. Observe this sensor
-    over a heating session to calibrate yours.
+    - Δ > 0 (room below setpoint)      → WORK (burning at targetPower)
+    - Δ ≤ 0 with Stand By OFF (factory)→ MODULATION (burning at minimum)
+    - Δ < −(DELTA T OFF), Stand By ON → STAND BY (off, awaiting cooldown)
+
+    The hysteresis (DELTA T OFF) is configurable in the stove's user
+    menu but not exposed by the cloud API. Observe this sensor over a
+    heating session against ``state`` transitions to back it out.
     """
 
     _attr_has_entity_name = True
@@ -246,20 +248,27 @@ class ExtraflameThermalDeltaSensor(CoordinatorEntity[ExtraflameCoordinator], Sen
 
 
 class ExtraflameBurnIntensitySensor(CoordinatorEntity[ExtraflameCoordinator], SensorEntity):
-    """``power / targetPower * 100`` — a factual ratio, not a model.
+    """``power / targetPower * 100`` — bi-modal ratio backed by the manual.
 
-    Whether Extraflame stoves modulate continuously around their chosen
-    power level or cycle ON/OFF at it depends on a Micronova firmware
-    flag that's not surfaced by the cloud API. This sensor exposes the
-    raw ratio so the user can observe what their specific unit does:
+    Per the Teodora Evo official manual, the stove operates in one of
+    two modes selected by the "Stand By function" toggle in the stove
+    settings:
 
-    - if the value stays near 0 % or near 100 % only, the firmware is
-      running in ON/OFF mode around the ``targetPower`` ceiling;
-    - if intermediate values show up while burning, the firmware is
-      modulating burn intensity between min and the ceiling.
+    - **Stand By OFF (factory default)** — when the room reaches the
+      setpoint, the stove switches to the **minimum** burn level
+      (machineState 5 "MODULATION") instead of shutting off. ratio
+      hovers around ``1 / targetPower * 100`` while in MODULATION, and
+      jumps back to ~100 % when the room cools below the setpoint and
+      the stove re-enters WORK (state 6).
 
-    Use this together with ``thermal_delta`` to correlate behaviour
-    against the room/setpoint gap.
+    - **Stand By ON** — when the room reaches setpoint + DELTA T OFF,
+      the stove shuts off entirely (machineState 9 "STAND BY").
+      ratio drops to 0 % until the room cools enough to re-ignite.
+
+    The cloud API doesn't expose the Stand By flag, so this sensor
+    reveals which mode is active by observation alone. Pair with
+    ``thermal_delta`` to see the room/setpoint gap that drives the
+    next transition.
     """
 
     _attr_has_entity_name = True

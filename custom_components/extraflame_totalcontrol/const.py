@@ -4,7 +4,7 @@ CONF_PASSWORD = "password"
 CONF_POLL_INTERVAL = "poll_interval"
 DEFAULT_POLL_INTERVAL = 30
 
-VERSION = "0.1.11"
+VERSION = "0.1.12"
 
 # Default preset recipes. Each preset is editable via the options flow
 # (Settings → Devices → Extraflame → Configure). "enabled" toggles its
@@ -23,19 +23,31 @@ CONF_PRESETS = "presets"
 # Teodora Evo for the 0 = OFF code; the rest is the standard Micronova
 # sequence — please open an issue with your stove model + observed codes
 # if your machine reports something different.
+# Labels track the exact phase terminology from the Teodora Evo
+# manual ([PDF, La Nordica-Extraflame, p. WORK/MODULATION section]):
+#   IGNITION    : allumage initial
+#   PREPARATION : stabilisation de la combustion + start ventilation
+#   WORK        : burn at user-set targetPower while delta > 0
+#   MODULATION  : factory-default behaviour when setpoint reached —
+#                 stove keeps burning at MINIMUM power (~P1), not off
+#   STAND BY    : only reached if the user has explicitly enabled the
+#                 Stand By function in the stove menu; full shutdown
+#                 after setpoint + DELTA T OFF reached, restarts
+#                 automatically when room cools below setpoint - delta
+#   COOLING     : forced cool-down before re-ignition
 MACHINE_STATE_LABELS: dict[int, str] = {
     0: "Off",
     1: "Check up",
-    2: "Allumage",
-    3: "Stabilisation",
-    4: "Pré-chargement",
-    5: "Modulation",
-    6: "Running",
+    2: "Ignition",
+    3: "Preparation",
+    4: "Préchargement",
+    5: "Modulation",      # burning at minimum, NOT off — see note above
+    6: "Work",            # burning at targetPower
     7: "Nettoyage",
-    8: "Refroidissement",
-    9: "Standby",
+    8: "Cooling",
+    9: "Stand by",        # only if Stand By function is ON
     10: "Final cleaning",
-    11: "Recovery / récupération",
+    11: "Recovery",
     12: "Allumage final",
 }
 MACHINE_STATE_OFF = {0, 9}
