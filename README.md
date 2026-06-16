@@ -1,7 +1,12 @@
+<p align="center">
+  <img src="assets/wordmark.svg" alt="Extraflame TotalControl 2.0" width="520"/>
+</p>
+
 # Extraflame TotalControl 2.0
 
 [![License](https://img.shields.io/github/license/Shad107/ha-extraflame-totalcontrol.svg)](LICENSE)
 [![HACS Custom](https://img.shields.io/badge/HACS-Custom-orange.svg)](https://hacs.xyz/)
+[![Brand PR](https://img.shields.io/badge/HA%20brands-PR%2310546-blue)](https://github.com/home-assistant/brands/pull/10546)
 
 Python client, Docker webapi and Home Assistant integration for the
 **Extraflame TotalControl 2.0** cloud API — the same backend the official
