@@ -9,10 +9,7 @@ from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
 
-import sys
-import os
-sys.path.append(os.path.join(os.path.dirname(__file__), "..", ".."))
-from extraflame_totalcontrol import (  # type: ignore
+from .api_client import (
     ExtraflameAPIError,
     ExtraflameAuthError,
     ExtraflameClient,

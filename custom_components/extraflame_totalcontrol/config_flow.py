@@ -6,10 +6,7 @@ from typing import Any
 import voluptuous as vol
 from homeassistant import config_entries
 
-import sys
-import os
-sys.path.append(os.path.join(os.path.dirname(__file__), "..", ".."))
-from extraflame_totalcontrol import ExtraflameAuthError, ExtraflameClient  # type: ignore
+from .api_client import ExtraflameAuthError, ExtraflameClient
 
 from .const import (
     CONF_PASSWORD,

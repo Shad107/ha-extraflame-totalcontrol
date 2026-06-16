@@ -7,7 +7,7 @@ RUN pip install --no-cache-dir \
     fastapi==0.115.0 \
     "uvicorn[standard]==0.30.6"
 
-COPY extraflame_totalcontrol /app/extraflame_totalcontrol
+COPY extraflame_totalcontrol/ /app/extraflame_totalcontrol/
 COPY docker/app.py /app/app.py
 
 EXPOSE 8080
