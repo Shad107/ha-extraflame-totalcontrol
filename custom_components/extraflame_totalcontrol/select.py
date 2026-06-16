@@ -8,7 +8,7 @@ from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
 from .const import DOMAIN
-from .coordinator import ExtraflameCoordinator
+from .coordinator import ExtraflameCoordinator, stove_device_info
 
 POWER_OPTIONS = ["P1", "P2", "P3", "P4", "P5"]
 
@@ -34,6 +34,8 @@ class ExtraflamePowerSelect(CoordinatorEntity[ExtraflameCoordinator], SelectEnti
     def __init__(self, coordinator: ExtraflameCoordinator, stove_id: str) -> None:
         super().__init__(coordinator)
         self._stove_id = stove_id
+        stove = coordinator.data["stoves"][stove_id]["stove"]
+        self._attr_device_info = stove_device_info(stove)
         self._attr_unique_id = f"extraflame_{stove_id}_power"
 
     @property

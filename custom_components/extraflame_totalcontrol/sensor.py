@@ -19,7 +19,7 @@ from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
 from .const import DOMAIN
-from .coordinator import ExtraflameCoordinator
+from .coordinator import ExtraflameCoordinator, stove_device_info
 from .visual import render_stove_svg
 
 SENSORS: tuple[tuple[str, str, str | None, str | None, str | None], ...] = (
@@ -77,6 +77,8 @@ class ExtraflameSensor(CoordinatorEntity[ExtraflameCoordinator], SensorEntity):
         self._attr_native_unit_of_measurement = unit
         self._attr_device_class = device_class
         self._attr_state_class = state_class
+        stove = coordinator.data["stoves"][stove_id]["stove"]
+        self._attr_device_info = stove_device_info(stove)
 
     @property
     def native_value(self) -> Any:
@@ -104,6 +106,8 @@ class ExtraflameVisualSensor(CoordinatorEntity[ExtraflameCoordinator], SensorEnt
         super().__init__(coordinator)
         self._stove_id = stove_id
         self._attr_unique_id = f"extraflame_{stove_id}_visual"
+        stove = coordinator.data["stoves"][stove_id]["stove"]
+        self._attr_device_info = stove_device_info(stove)
 
     def _snap(self) -> dict[str, Any]:
         return (self.coordinator.data or {}).get("stoves", {}).get(self._stove_id, {})

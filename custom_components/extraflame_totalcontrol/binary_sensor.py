@@ -11,7 +11,7 @@ from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
 from .const import DOMAIN
-from .coordinator import ExtraflameCoordinator
+from .coordinator import ExtraflameCoordinator, stove_device_info
 
 
 SMOKE_TEMP_WARNING_C = 400.0  # red-glow risk threshold for flue pipes
@@ -39,6 +39,8 @@ class ExtraflameOnlineSensor(CoordinatorEntity[ExtraflameCoordinator], BinarySen
     def __init__(self, coordinator: ExtraflameCoordinator, stove_id: str) -> None:
         super().__init__(coordinator)
         self._stove_id = stove_id
+        stove = coordinator.data["stoves"][stove_id]["stove"]
+        self._attr_device_info = stove_device_info(stove)
         self._attr_unique_id = f"extraflame_{stove_id}_online"
 
     @property
@@ -81,6 +83,8 @@ class ExtraflameSmokeWarning(CoordinatorEntity[ExtraflameCoordinator], BinarySen
     def __init__(self, coordinator: ExtraflameCoordinator, stove_id: str) -> None:
         super().__init__(coordinator)
         self._stove_id = stove_id
+        stove = coordinator.data["stoves"][stove_id]["stove"]
+        self._attr_device_info = stove_device_info(stove)
         self._attr_unique_id = f"extraflame_{stove_id}_smoke_warning"
 
     @property
@@ -100,6 +104,8 @@ class ExtraflameAlarm(CoordinatorEntity[ExtraflameCoordinator], BinarySensorEnti
     def __init__(self, coordinator: ExtraflameCoordinator, stove_id: str) -> None:
         super().__init__(coordinator)
         self._stove_id = stove_id
+        stove = coordinator.data["stoves"][stove_id]["stove"]
+        self._attr_device_info = stove_device_info(stove)
         self._attr_unique_id = f"extraflame_{stove_id}_alarm"
 
     @property

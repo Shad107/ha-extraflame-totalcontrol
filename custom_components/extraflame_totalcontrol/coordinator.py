@@ -9,10 +9,13 @@ from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
 
+from homeassistant.helpers.device_registry import DeviceInfo, format_mac
+
 from .api_client import (
     ExtraflameAPIError,
     ExtraflameAuthError,
     ExtraflameClient,
+    Stove,
 )
 
 from .const import (
@@ -62,3 +65,22 @@ class ExtraflameCoordinator(DataUpdateCoordinator[dict[str, Any]]):
 
     async def async_close(self) -> None:
         await self._client.close()
+
+
+def stove_device_info(stove: Stove) -> DeviceInfo:
+    """Build the DeviceInfo describing a stove. Used by every entity."""
+    identifiers = {(DOMAIN, stove.id)}
+    connections = set()
+    if stove.mac_address:
+        try:
+            connections.add(("mac", format_mac(stove.mac_address)))
+        except Exception:
+            pass
+    return DeviceInfo(
+        identifiers=identifiers,
+        connections=connections,
+        manufacturer="La Nordica-Extraflame",
+        model=stove.type or "Pellet stove",
+        name=stove.name or f"Extraflame {stove.id[:8]}",
+        suggested_area="Salon",
+    )
