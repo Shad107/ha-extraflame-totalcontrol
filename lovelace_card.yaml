@@ -140,14 +140,35 @@ cards:
             entity_id: select.mon_poele_power
           data:
             option: P5
-      - type: button
-        name: OFF
-        icon: mdi:power
-        tap_action:
-          action: call-service
-          service: climate.turn_off
-          target:
-            entity_id: climate.mon_poele
+      # Last slot toggles between "Allumer" and "Éteindre" depending on
+      # the climate entity's current state. Both conditional cards are
+      # mutually exclusive so only one button shows at a time.
+      - type: conditional
+        conditions:
+          - entity: climate.mon_poele
+            state: "off"
+        card:
+          type: button
+          name: Allumer
+          icon: mdi:fire
+          tap_action:
+            action: call-service
+            service: climate.turn_on
+            target:
+              entity_id: climate.mon_poele
+      - type: conditional
+        conditions:
+          - entity: climate.mon_poele
+            state_not: "off"
+        card:
+          type: button
+          name: Éteindre
+          icon: mdi:power
+          tap_action:
+            action: call-service
+            service: climate.turn_off
+            target:
+              entity_id: climate.mon_poele
 
 # =============================================================
 # Variante compacte : carte masquée si le poêle est débranché.
