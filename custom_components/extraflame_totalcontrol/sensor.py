@@ -56,6 +56,7 @@ async def async_setup_entry(
         entities.append(ExtraflameVisualSensor(coordinator, stove_id))
         entities.append(ExtraflameStateLabelSensor(coordinator, stove_id))
         entities.append(ExtraflameThermalDeltaSensor(coordinator, stove_id))
+        entities.append(ExtraflameBurnIntensitySensor(coordinator, stove_id))
     async_add_entities(entities)
 
 
@@ -242,5 +243,45 @@ class ExtraflameThermalDeltaSensor(CoordinatorEntity[ExtraflameCoordinator], Sen
         if target is None or room is None:
             return None
         return round(target - room, 1)
+
+
+class ExtraflameBurnIntensitySensor(CoordinatorEntity[ExtraflameCoordinator], SensorEntity):
+    """``power / targetPower * 100`` — a factual ratio, not a model.
+
+    Whether Extraflame stoves modulate continuously around their chosen
+    power level or cycle ON/OFF at it depends on a Micronova firmware
+    flag that's not surfaced by the cloud API. This sensor exposes the
+    raw ratio so the user can observe what their specific unit does:
+
+    - if the value stays near 0 % or near 100 % only, the firmware is
+      running in ON/OFF mode around the ``targetPower`` ceiling;
+    - if intermediate values show up while burning, the firmware is
+      modulating burn intensity between min and the ceiling.
+
+    Use this together with ``thermal_delta`` to correlate behaviour
+    against the room/setpoint gap.
+    """
+
+    _attr_has_entity_name = True
+    _attr_name = "Burn intensity"
+    _attr_icon = "mdi:fire"
+    _attr_native_unit_of_measurement = "%"
+    _attr_state_class = SensorStateClass.MEASUREMENT
+    _attr_suggested_display_precision = 0
+
+    def __init__(self, coordinator: ExtraflameCoordinator, stove_id: str) -> None:
+        super().__init__(coordinator)
+        self._stove_id = stove_id
+        self._attr_unique_id = f"extraflame_{stove_id}_burn_intensity"
+        stove = coordinator.data["stoves"][stove_id]["stove"]
+        self._attr_device_info = stove_device_info(stove)
+
+    @property
+    def native_value(self) -> float | None:
+        cur = _param_float(self.coordinator, self._stove_id, "power")
+        cap = _param_float(self.coordinator, self._stove_id, "targetPower")
+        if cur is None or cap is None or cap <= 0:
+            return None
+        return round(min(100.0, max(0.0, cur / cap * 100.0)), 0)
 
 
