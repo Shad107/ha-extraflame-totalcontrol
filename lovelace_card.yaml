@@ -32,9 +32,12 @@ cards:
     heading: Poêle à granulés
     icon: mdi:stove
 
-  - type: markdown
-    content: |
-      {{ state_attr('sensor.mon_poele_visual', 'svg') | safe }}
+  # The visual is rendered by the bundled custom card
+  # `extraflame-stove-card`, automatically registered as a Lovelace
+  # resource by the integration. No HACS-side card install needed.
+  - type: custom:extraflame-stove-card
+    entity: sensor.mon_poele_visual
+    tap_action_entity: climate.mon_poele
 
   - type: conditional
     conditions:
