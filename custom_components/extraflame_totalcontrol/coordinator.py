@@ -692,8 +692,16 @@ class ExtraflameCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         return st.get("per_room") or {}
 
     def best_insulated_room(self, stove_id: str) -> tuple[str | None, float | None]:
+        """Pick the room with the highest tau.
+
+        Tau is biased upward by residual heating, but the RELATIVE
+        ranking between rooms still tells you which holds heat best
+        and which leaks first - which is what the user actually cares
+        about for insulation upgrades. We don't filter on
+        low_confidence here, so the ranking is always available.
+        """
         rooms = self.per_room_tau(stove_id)
-        valid = {e: m["tau_h"] for e, m in rooms.items() if not m.get("low_confidence")}
+        valid = {e: m["tau_h"] for e, m in rooms.items() if m.get("tau_h") is not None}
         if not valid:
             return None, None
         ent = max(valid, key=lambda k: valid[k])
@@ -701,7 +709,7 @@ class ExtraflameCoordinator(DataUpdateCoordinator[dict[str, Any]]):
 
     def worst_insulated_room(self, stove_id: str) -> tuple[str | None, float | None]:
         rooms = self.per_room_tau(stove_id)
-        valid = {e: m["tau_h"] for e, m in rooms.items() if not m.get("low_confidence")}
+        valid = {e: m["tau_h"] for e, m in rooms.items() if m.get("tau_h") is not None}
         if not valid:
             return None, None
         ent = min(valid, key=lambda k: valid[k])
