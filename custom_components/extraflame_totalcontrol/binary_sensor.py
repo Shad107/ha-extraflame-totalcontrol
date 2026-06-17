@@ -35,6 +35,7 @@ async def async_setup_entry(
         entities.append(ExtraflamePelletLowWarning(coordinator, stove_id))
         entities.append(ExtraflamePelletCriticalWarning(coordinator, stove_id))
         entities.append(ExtraflameHumidityAlert(coordinator, stove_id))
+        entities.append(ExtraflameShouldPreheatNow(coordinator, stove_id))
     async_add_entities(entities)
 
 
@@ -209,4 +210,38 @@ class ExtraflameHumidityAlert(
             "comfort_low_pct": lo,
             "comfort_high_pct": hi,
             "offenders": offenders,
+        }
+
+
+class ExtraflameShouldPreheatNow(
+    CoordinatorEntity[ExtraflameCoordinator], BinarySensorEntity
+):
+    """ON when it's time to start the stove ahead of an incoming cold snap.
+
+    Stays ON for a 90-minute window after the recommended preheat
+    time, so a minute-tick miss doesn't make the flag bounce back
+    off. Pair with a HA automation to auto-start the stove (or just
+    send a notification).
+    """
+
+    _attr_has_entity_name = True
+    _attr_name = "Should preheat now"
+    _attr_icon = "mdi:fire-alert"
+
+    def __init__(self, coordinator: ExtraflameCoordinator, stove_id: str) -> None:
+        super().__init__(coordinator)
+        self._stove_id = stove_id
+        stove = coordinator.data["stoves"][stove_id]["stove"]
+        self._attr_device_info = stove_device_info(stove)
+        self._attr_unique_id = f"extraflame_{stove_id}_should_preheat_now"
+
+    @property
+    def is_on(self) -> bool:
+        return self.coordinator.should_preheat_now(self._stove_id)
+
+    @property
+    def extra_state_attributes(self) -> dict:
+        return {
+            "cold_snap_in_hours": self.coordinator.cold_snap_in_hours(),
+            "forecast_min_temp_24h": self.coordinator.forecast_min_temp_24h(),
         }

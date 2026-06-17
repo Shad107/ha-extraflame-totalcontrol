@@ -50,13 +50,19 @@ from .const import (
     DEFAULT_AGGREGATION_MODE,
     DEFAULT_AUTO_DEADBAND,
     DEFAULT_AUTO_MAX_POWER,
+    CONF_COLD_SNAP_THRESHOLD_C,
     CONF_HOME_HEAT_CAPACITY_MJ_PER_K,
     CONF_PELLET_PCI_KWH_KG,
+    CONF_PREHEAT_TARGET_C,
+    CONF_WEATHER_ENTITY,
     DEFAULT_AUTO_MIN_POWER,
+    DEFAULT_COLD_SNAP_THRESHOLD_C,
     DEFAULT_HOME_HEAT_CAPACITY_MJ_PER_K,
+    DEFAULT_PREHEAT_TARGET_C,
     DEFAULT_HUMIDITY_COMFORT_HIGH_PCT,
     DEFAULT_HUMIDITY_COMFORT_LOW_PCT,
     DEFAULT_PELLET_CONSUMPTION_P1_KG_H,
+    FORECAST_CACHE_SECONDS,
     DEFAULT_PELLET_PCI_KWH_KG,
     DEFAULT_PELLET_CONSUMPTION_P2_KG_H,
     DEFAULT_PELLET_CONSUMPTION_P3_KG_H,
@@ -110,6 +116,11 @@ class ExtraflameCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             hass, THERMAL_STORE_VERSION, f"{DOMAIN}_thermal_{entry.entry_id}"
         )
         self._thermal_loaded: bool = False
+        # Forecast cache - the weather.get_forecasts service call is
+        # expensive and Meteo-France only updates hourly, so we refresh
+        # at most every FORECAST_CACHE_SECONDS.
+        self._forecast: list[dict[str, Any]] = []
+        self._forecast_fetched_ts: float = 0.0
 
     async def _async_update_data(self) -> dict[str, Any]:
         try:
@@ -136,6 +147,8 @@ class ExtraflameCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             # the target - we still measure the instantaneous burn rate
             # at this tick, which is correct for an integrator.
             await self._update_pellet_consumption(snapshot)
+            # Refresh weather forecast lazily (~30min cadence).
+            await self._async_refresh_forecast_if_stale()
             return snapshot
         except ExtraflameAuthError as e:
             raise UpdateFailed(f"Authentication failed: {e}") from e
@@ -1154,6 +1167,136 @@ class ExtraflameCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             return round(t_h * 60.0, 1)
         except (ValueError, ZeroDivisionError):
             return None
+
+    # ----- weather anticipation (v0.5.0) -----
+    #
+    # Pulls hourly forecast from any weather.* entity (Meteo-France,
+    # Met.no, OpenWeatherMap, ...) and combines it with the learned
+    # tau + the v0.4.0 steady-state model to recommend when to start
+    # the stove ahead of a cold snap. The point: pellet stoves take
+    # 10-30 minutes to ignite + ramp from cold; by the time you notice
+    # the room got cold, the stove can't catch up in time. Knowing the
+    # forecast lets us start the stove ~tau/2 hours before the cold
+    # snap so the room never actually drops.
+
+    def _weather_entity(self) -> str | None:
+        opts = self.config_entry.options if self.config_entry else {}
+        v = opts.get(CONF_WEATHER_ENTITY)
+        if v:
+            return v
+        # Auto-discover the first weather.* entity if user hasn't picked
+        # one yet - convenient default for users with only one source.
+        for state in self.hass.states.async_all():
+            if state.entity_id.startswith("weather."):
+                return state.entity_id
+        return None
+
+    def _cold_snap_threshold_c(self) -> float:
+        opts = self.config_entry.options if self.config_entry else {}
+        try:
+            return float(opts.get(CONF_COLD_SNAP_THRESHOLD_C, DEFAULT_COLD_SNAP_THRESHOLD_C))
+        except (TypeError, ValueError):
+            return DEFAULT_COLD_SNAP_THRESHOLD_C
+
+    def _preheat_target_c(self) -> float:
+        opts = self.config_entry.options if self.config_entry else {}
+        try:
+            return float(opts.get(CONF_PREHEAT_TARGET_C, DEFAULT_PREHEAT_TARGET_C))
+        except (TypeError, ValueError):
+            return DEFAULT_PREHEAT_TARGET_C
+
+    async def _async_refresh_forecast_if_stale(self) -> None:
+        now = _time.time()
+        if now - self._forecast_fetched_ts < FORECAST_CACHE_SECONDS:
+            return
+        weather_eid = self._weather_entity()
+        if not weather_eid:
+            return
+        try:
+            response = await self.hass.services.async_call(
+                "weather",
+                "get_forecasts",
+                {"entity_id": weather_eid, "type": "hourly"},
+                blocking=True,
+                return_response=True,
+            )
+        except Exception as e:  # noqa: BLE001
+            _LOGGER.debug("forecast fetch failed: %s", e)
+            return
+        try:
+            entries = (response or {}).get(weather_eid, {}).get("forecast", [])
+        except AttributeError:
+            entries = []
+        # Normalise to (ts_utc, temp_c) - the only fields we use
+        normalised: list[dict[str, Any]] = []
+        for entry in entries:
+            try:
+                ts_raw = entry.get("datetime")
+                if hasattr(ts_raw, "timestamp"):
+                    ts = ts_raw.timestamp()
+                else:
+                    # ISO 8601 string
+                    ts = dt_util.parse_datetime(str(ts_raw)).timestamp()
+                t = float(entry.get("temperature"))
+            except Exception:  # noqa: BLE001
+                continue
+            normalised.append({"ts": ts, "temperature": t})
+        if normalised:
+            self._forecast = normalised
+            self._forecast_fetched_ts = now
+
+    def forecast_min_temp_24h(self) -> float | None:
+        if not self._forecast:
+            return None
+        now = _time.time()
+        horizon = now + 24 * 3600
+        upcoming = [e["temperature"] for e in self._forecast if now <= e["ts"] <= horizon]
+        if not upcoming:
+            return None
+        return round(min(upcoming), 1)
+
+    def cold_snap_in_hours(self) -> float | None:
+        """Hours until the next forecast hour below the cold-snap threshold.
+
+        Returns None when the next 48h forecast stays warm, so dashboards
+        can render "no cold snap pending" cleanly.
+        """
+        if not self._forecast:
+            return None
+        threshold = self._cold_snap_threshold_c()
+        now = _time.time()
+        for entry in self._forecast:
+            if entry["ts"] < now:
+                continue
+            if entry["temperature"] <= threshold:
+                return round((entry["ts"] - now) / 3600.0, 1)
+            if entry["ts"] > now + 48 * 3600:
+                break
+        return None
+
+    def recommended_preheat_at(self, stove_id: str) -> float | None:
+        """Unix timestamp at which to start the stove ahead of a cold snap.
+
+        Lead time is tau/2 (hours) - a heuristic that balances pre-heat
+        cost against catching up. Without a valid tau we return None so
+        the user sees "data not ready yet" instead of a wrong number.
+        """
+        snap_in_h = self.cold_snap_in_hours()
+        tau_h = self.thermal_tau_h(stove_id)
+        if snap_in_h is None or tau_h is None or tau_h <= 0:
+            return None
+        # Cap lead time at 4h - beyond that we'd burn pellets for nothing
+        lead_h = min(4.0, tau_h / 2.0)
+        return _time.time() + (snap_in_h - lead_h) * 3600.0
+
+    def should_preheat_now(self, stove_id: str) -> bool:
+        ts = self.recommended_preheat_at(stove_id)
+        if ts is None:
+            return False
+        # ON during a 90-minute window after the recommended time, so a
+        # missed minute-tick doesn't make the flag bounce back off.
+        now = _time.time()
+        return ts <= now <= ts + 90 * 60
 
     async def async_close(self) -> None:
         await self._client.close()

@@ -72,6 +72,9 @@ async def async_setup_entry(
         entities.append(ExtraflameHeatingPowerSensor(coordinator, stove_id))
         entities.append(ExtraflameSteadyStateTempSensor(coordinator, stove_id))
         entities.append(ExtraflameTimeToSetpointSensor(coordinator, stove_id))
+        entities.append(ExtraflameForecastMinTempSensor(coordinator, stove_id))
+        entities.append(ExtraflameColdSnapInHoursSensor(coordinator, stove_id))
+        entities.append(ExtraflameRecommendedPreheatAtSensor(coordinator, stove_id))
     async_add_entities(entities)
 
 
@@ -825,5 +828,96 @@ class ExtraflameTimeToSetpointSensor(
     @property
     def native_value(self) -> float | None:
         return self.coordinator.time_to_setpoint_minutes(self._stove_id)
+
+
+class ExtraflameForecastMinTempSensor(
+    CoordinatorEntity[ExtraflameCoordinator], SensorEntity
+):
+    """Lowest forecast outdoor temperature in the next 24 hours.
+
+    Reads the configured weather.* entity (Meteo-France by default in
+    France). Useful as a one-glance "how cold is tonight" indicator
+    next to the indoor temp on the dashboard.
+    """
+
+    _attr_has_entity_name = True
+    _attr_name = "Forecast min temperature 24h"
+    _attr_icon = "mdi:weather-night"
+    _attr_device_class = SensorDeviceClass.TEMPERATURE
+    _attr_native_unit_of_measurement = UnitOfTemperature.CELSIUS
+    _attr_state_class = SensorStateClass.MEASUREMENT
+    _attr_suggested_display_precision = 1
+
+    def __init__(self, coordinator: ExtraflameCoordinator, stove_id: str) -> None:
+        super().__init__(coordinator)
+        self._stove_id = stove_id
+        self._attr_unique_id = f"extraflame_{stove_id}_forecast_min_temp_24h"
+        stove = coordinator.data["stoves"][stove_id]["stove"]
+        self._attr_device_info = stove_device_info(stove)
+
+    @property
+    def native_value(self) -> float | None:
+        return self.coordinator.forecast_min_temp_24h()
+
+
+class ExtraflameColdSnapInHoursSensor(
+    CoordinatorEntity[ExtraflameCoordinator], SensorEntity
+):
+    """Hours until the next forecast hour below the cold-snap threshold.
+
+    Tunable threshold defaults to 5 deg C - tighten in mild climates,
+    loosen if you live somewhere actually cold. Returns ``unknown``
+    when the next 48h forecast stays above the threshold so the
+    dashboard can render "no cold snap pending".
+    """
+
+    _attr_has_entity_name = True
+    _attr_name = "Cold snap in"
+    _attr_icon = "mdi:weather-snowy"
+    _attr_native_unit_of_measurement = "h"
+    _attr_state_class = SensorStateClass.MEASUREMENT
+    _attr_suggested_display_precision = 1
+
+    def __init__(self, coordinator: ExtraflameCoordinator, stove_id: str) -> None:
+        super().__init__(coordinator)
+        self._stove_id = stove_id
+        self._attr_unique_id = f"extraflame_{stove_id}_cold_snap_in_hours"
+        stove = coordinator.data["stoves"][stove_id]["stove"]
+        self._attr_device_info = stove_device_info(stove)
+
+    @property
+    def native_value(self) -> float | None:
+        return self.coordinator.cold_snap_in_hours()
+
+
+class ExtraflameRecommendedPreheatAtSensor(
+    CoordinatorEntity[ExtraflameCoordinator], SensorEntity
+):
+    """Timestamp at which to start the stove ahead of an incoming cold snap.
+
+    Lead time = min(4 h, tau/2 h). Without a valid tau we expose nothing
+    so dashboards know the data isn't ready yet (user needs to press
+    Learn inertia after a real heating session).
+    """
+
+    _attr_has_entity_name = True
+    _attr_name = "Recommended preheat at"
+    _attr_icon = "mdi:clock-start"
+    _attr_device_class = SensorDeviceClass.TIMESTAMP
+
+    def __init__(self, coordinator: ExtraflameCoordinator, stove_id: str) -> None:
+        super().__init__(coordinator)
+        self._stove_id = stove_id
+        self._attr_unique_id = f"extraflame_{stove_id}_recommended_preheat_at"
+        stove = coordinator.data["stoves"][stove_id]["stove"]
+        self._attr_device_info = stove_device_info(stove)
+
+    @property
+    def native_value(self):
+        ts = self.coordinator.recommended_preheat_at(self._stove_id)
+        if ts is None:
+            return None
+        from datetime import datetime, timezone
+        return datetime.fromtimestamp(ts, tz=timezone.utc)
 
 

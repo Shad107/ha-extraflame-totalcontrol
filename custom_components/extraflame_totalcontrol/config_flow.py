@@ -16,12 +16,15 @@ from .const import (
     CONF_AUTO_DEADBAND,
     CONF_AUTO_MAX_POWER,
     CONF_AUTO_MIN_POWER,
+    CONF_COLD_SNAP_THRESHOLD_C,
     CONF_HOME_HEAT_CAPACITY_MJ_PER_K,
     CONF_HUMIDITY_COMFORT_HIGH_PCT,
     CONF_HUMIDITY_COMFORT_LOW_PCT,
     CONF_HUMIDITY_SENSORS,
     CONF_OUTDOOR_TEMP_SENSOR,
     CONF_PELLET_PCI_KWH_KG,
+    CONF_PREHEAT_TARGET_C,
+    CONF_WEATHER_ENTITY,
     CONF_PASSWORD,
     CONF_PELLET_CONSUMPTION_P1_KG_H,
     CONF_PELLET_CONSUMPTION_P2_KG_H,
@@ -37,10 +40,12 @@ from .const import (
     DEFAULT_AUTO_DEADBAND,
     DEFAULT_AUTO_MAX_POWER,
     DEFAULT_AUTO_MIN_POWER,
+    DEFAULT_COLD_SNAP_THRESHOLD_C,
     DEFAULT_HOME_HEAT_CAPACITY_MJ_PER_K,
     DEFAULT_HUMIDITY_COMFORT_HIGH_PCT,
     DEFAULT_HUMIDITY_COMFORT_LOW_PCT,
     DEFAULT_PELLET_CONSUMPTION_P1_KG_H,
+    DEFAULT_PREHEAT_TARGET_C,
     DEFAULT_PELLET_PCI_KWH_KG,
     DEFAULT_PELLET_CONSUMPTION_P2_KG_H,
     DEFAULT_PELLET_CONSUMPTION_P3_KG_H,
@@ -178,6 +183,13 @@ class ExtraflameOptionsFlow(config_entries.OptionsFlow):
                     CONF_HOME_HEAT_CAPACITY_MJ_PER_K: float(
                         user_input.get(CONF_HOME_HEAT_CAPACITY_MJ_PER_K, DEFAULT_HOME_HEAT_CAPACITY_MJ_PER_K)
                     ),
+                    CONF_WEATHER_ENTITY: user_input.get(CONF_WEATHER_ENTITY) or None,
+                    CONF_COLD_SNAP_THRESHOLD_C: float(
+                        user_input.get(CONF_COLD_SNAP_THRESHOLD_C, DEFAULT_COLD_SNAP_THRESHOLD_C)
+                    ),
+                    CONF_PREHEAT_TARGET_C: float(
+                        user_input.get(CONF_PREHEAT_TARGET_C, DEFAULT_PREHEAT_TARGET_C)
+                    ),
                 },
             )
 
@@ -306,5 +318,21 @@ class ExtraflameOptionsFlow(config_entries.OptionsFlow):
             CONF_HOME_HEAT_CAPACITY_MJ_PER_K,
             default=opts.get(CONF_HOME_HEAT_CAPACITY_MJ_PER_K, DEFAULT_HOME_HEAT_CAPACITY_MJ_PER_K),
         )] = vol.All(vol.Coerce(float), vol.Range(min=0.5, max=50.0))
+
+        # ----- v0.5.0 weather anticipation -----
+        schema_dict[vol.Optional(
+            CONF_WEATHER_ENTITY,
+            default=opts.get(CONF_WEATHER_ENTITY) or vol.UNDEFINED,
+        )] = selector.EntitySelector(
+            selector.EntitySelectorConfig(domain="weather", multiple=False)
+        )
+        schema_dict[vol.Required(
+            CONF_COLD_SNAP_THRESHOLD_C,
+            default=opts.get(CONF_COLD_SNAP_THRESHOLD_C, DEFAULT_COLD_SNAP_THRESHOLD_C),
+        )] = vol.All(vol.Coerce(float), vol.Range(min=-30.0, max=20.0))
+        schema_dict[vol.Required(
+            CONF_PREHEAT_TARGET_C,
+            default=opts.get(CONF_PREHEAT_TARGET_C, DEFAULT_PREHEAT_TARGET_C),
+        )] = vol.All(vol.Coerce(float), vol.Range(min=5.0, max=30.0))
 
         return self.async_show_form(step_id="init", data_schema=vol.Schema(schema_dict))

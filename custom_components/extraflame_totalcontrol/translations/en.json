@@ -66,7 +66,10 @@
           "humidity_comfort_low_pct": "Humidity comfort low (%)",
           "humidity_comfort_high_pct": "Humidity comfort high (%)",
           "pellet_pci_kwh_kg": "Pellet calorific value (kWh/kg)",
-          "home_heat_capacity_mj_per_k": "Home heat capacity (MJ/K)"
+          "home_heat_capacity_mj_per_k": "Home heat capacity (MJ/K)",
+          "weather_entity": "Weather forecast entity",
+          "cold_snap_threshold_c": "Cold snap threshold (degC)",
+          "preheat_target_c": "Preheat target temperature (degC)"
         },
         "data_description": {
           "eco_power": "1=P1 to 5=P5. P1 is the minimum burn level.",
@@ -101,7 +104,10 @@
           "humidity_comfort_low_pct": "Lower bound of the comfort RH range. Rooms below this trigger the humidity alert as too dry. 30% matches ASHRAE winter guidance; raise it if you have wood furniture or sensitive skin.",
           "humidity_comfort_high_pct": "Upper bound of the comfort RH range. Rooms above this trigger the humidity alert as too damp. 65% leaves a small margin before mould risk on cold walls; lower for older homes.",
           "pellet_pci_kwh_kg": "Net calorific value of the pellets you actually burn. Wood pellets ship at 4.6 to 5.0 kWh/kg per the EN 14961-2 spec, default 4.8. Lower for low-grade pellets or if combustion is incomplete.",
-          "home_heat_capacity_mj_per_k": "Thermal mass of the heated volume. Rough rule: 0.05 MJ/K per habitable m2 (so 5 MJ/K for a 100 m2 single-storey home). Concrete walls + tile floors push this up, wood-frame homes push it down. Used by the steady-state and time-to-setpoint predictions."
+          "home_heat_capacity_mj_per_k": "Thermal mass of the heated volume. Rough rule: 0.05 MJ/K per habitable m2 (so 5 MJ/K for a 100 m2 single-storey home). Concrete walls + tile floors push this up, wood-frame homes push it down. Used by the steady-state and time-to-setpoint predictions.",
+          "weather_entity": "Any weather.* entity that supports the hourly forecast service. Meteo-France is the default pick in France. The integration reads the next 48h of forecast and projects when to pre-heat.",
+          "cold_snap_threshold_c": "Outdoor temperature below which a forecast hour counts as a 'cold snap'. Default 5 degC; loosen for mild climates, tighten if you live somewhere actually cold.",
+          "preheat_target_c": "Target room temperature to maintain when the cold snap arrives. The recommendation timestamp is computed so the room stays at this value when outdoor crosses the threshold."
         }
       }
     }

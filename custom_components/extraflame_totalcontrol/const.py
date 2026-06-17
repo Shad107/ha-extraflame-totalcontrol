@@ -4,7 +4,7 @@ CONF_PASSWORD = "password"
 CONF_POLL_INTERVAL = "poll_interval"
 DEFAULT_POLL_INTERVAL = 30
 
-VERSION = "0.4.0"
+VERSION = "0.5.0"
 
 # Default preset recipes. Each preset is editable via the options flow
 # (Settings → Devices → Extraflame → Configure). "enabled" toggles its
@@ -113,6 +113,18 @@ CONF_PELLET_PCI_KWH_KG = "pellet_pci_kwh_kg"
 CONF_HOME_HEAT_CAPACITY_MJ_PER_K = "home_heat_capacity_mj_per_k"
 DEFAULT_PELLET_PCI_KWH_KG = 4.8       # typical wood pellet, 4.6..5.0 range
 DEFAULT_HOME_HEAT_CAPACITY_MJ_PER_K = 5.0   # ~100 m2 average French home
+
+# v0.5.0 - weather anticipation. Reads hourly forecast from any HA
+# weather.* entity (Meteo-France, Met.no, OpenWeatherMap, etc.) and
+# computes when to pre-heat the home so the room stays at setpoint
+# even when a cold snap arrives. Uses the learned tau from v0.3.x
+# and the steady-state model from v0.4.0.
+CONF_WEATHER_ENTITY = "weather_entity"
+CONF_COLD_SNAP_THRESHOLD_C = "cold_snap_threshold_c"
+CONF_PREHEAT_TARGET_C = "preheat_target_c"
+DEFAULT_COLD_SNAP_THRESHOLD_C = 5.0    # outdoor below this -> cold snap
+DEFAULT_PREHEAT_TARGET_C = 20.0        # room temp to hold during cold
+FORECAST_CACHE_SECONDS = 1800          # Meteo-France updates ~hourly
 
 # Mapping inspired by the Micronova mainboard state codes commonly seen on
 # Extraflame / La Nordica / MCZ / Ravelli pellet stoves. Verified on a
