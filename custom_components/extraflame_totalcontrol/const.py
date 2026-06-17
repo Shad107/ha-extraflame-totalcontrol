@@ -4,7 +4,7 @@ CONF_PASSWORD = "password"
 CONF_POLL_INTERVAL = "poll_interval"
 DEFAULT_POLL_INTERVAL = 30
 
-VERSION = "0.2.6"
+VERSION = "0.2.7"
 
 # Default preset recipes. Each preset is editable via the options flow
 # (Settings → Devices → Extraflame → Configure). "enabled" toggles its
@@ -72,6 +72,15 @@ DEFAULT_PELLET_CONSUMPTION_P5_KG_H = 1.8
 PELLET_LOW_WARNING_PCT = 15.0
 PELLET_CRITICAL_WARNING_PCT = 5.0
 PELLET_STORE_VERSION = 1
+
+# v0.2.7 - per-room humidity scoring. ASHRAE comfort range is 30..60% RH
+# in winter; below 30% triggers dry-air symptoms (dry skin, static, more
+# viral transmission), above 65% accelerates mould risk on cold walls.
+# Defaults match comfort guidance and can be tuned per-home.
+CONF_HUMIDITY_COMFORT_LOW_PCT = "humidity_comfort_low_pct"
+CONF_HUMIDITY_COMFORT_HIGH_PCT = "humidity_comfort_high_pct"
+DEFAULT_HUMIDITY_COMFORT_LOW_PCT = 30.0
+DEFAULT_HUMIDITY_COMFORT_HIGH_PCT = 65.0
 
 # Mapping inspired by the Micronova mainboard state codes commonly seen on
 # Extraflame / La Nordica / MCZ / Ravelli pellet stoves. Verified on a

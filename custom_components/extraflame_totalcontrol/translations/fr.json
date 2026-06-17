@@ -28,7 +28,7 @@
     "step": {
       "init": {
         "title": "Extraflame - Configuration",
-        "description": "Ajustez le comportement de l'intégration. Le formulaire est organisé en quatre sections :\n\n**1. Presets climate** - quatre raccourcis (Eco / Silence / Confort / Boost) que vous pouvez activer dans `climate.preset_modes`. Décochez-en un pour le retirer du dashboard.\n\n**2. Auto-modulation** - bornes du pilotage automatique de la puissance via `switch.<stove>_auto_modulation`. P1 est volontairement évité par défaut (les spécialistes déconseillent de faire tourner un poêle à granulés au minimum en continu - mauvaise combustion, suie, dépôts).\n\n**3. Agrégation de capteurs** - récupérez température et humidité depuis n'importe quel capteur déjà connu de HA (têtes Tado, Aqara, Netatmo, ESPHome). La moyenne devient l'input de l'auto-modulation à la place de la sonde interne du poêle (qui est trop proche du brûleur et lit toujours trop chaud).\n\n**4. Niveau de pellets** - le cloud n'expose pas de jauge de granulés, l'intégration estime le niveau en intégrant le débit de combustion dans le temps. Renseignez la capacité du réservoir et les débits P1..P5 issus du manuel de votre poêle. Pressez le bouton Remplir pellets juste après avoir rechargé pour remettre le compteur à plein.\n\nLes changements sont pris en compte immédiatement - pas besoin de redémarrer HA.",
+        "description": "Ajustez le comportement de l'intégration. Le formulaire est organisé en cinq sections :\n\n**1. Presets climate** - quatre raccourcis (Eco / Silence / Confort / Boost) que vous pouvez activer dans `climate.preset_modes`. Décochez-en un pour le retirer du dashboard.\n\n**2. Auto-modulation** - bornes du pilotage automatique de la puissance via `switch.<stove>_auto_modulation`. P1 est volontairement évité par défaut (les spécialistes déconseillent de faire tourner un poêle à granulés au minimum en continu - mauvaise combustion, suie, dépôts).\n\n**3. Agrégation de capteurs** - récupérez température et humidité depuis n'importe quel capteur déjà connu de HA (têtes Tado, Aqara, Netatmo, ESPHome). La moyenne devient l'input de l'auto-modulation à la place de la sonde interne du poêle (qui est trop proche du brûleur et lit toujours trop chaud).\n\n**4. Niveau de pellets** - le cloud n'expose pas de jauge de granulés, l'intégration estime le niveau en intégrant le débit de combustion dans le temps. Renseignez la capacité du réservoir et les débits P1..P5 issus du manuel de votre poêle. Pressez le bouton Remplir pellets juste après avoir rechargé pour remettre le compteur à plein.\n\n**5. Confort humidité** - bornes basse/haute qui pilotent `binary_sensor.<stove>_humidity_alert`. Défauts alignés sur les recommandations ASHRAE hiver (30..65 %). À combiner avec `sensor.<stove>_dampest_room` / `_driest_room` pour identifier la pièce coupable.\n\nLes changements sont pris en compte immédiatement - pas besoin de redémarrer HA.",
         "data": {
           "eco_enabled": "Eco - activé",
           "eco_power": "Eco - niveau de puissance",
@@ -62,7 +62,9 @@
           "pellet_conso_p2": "Consommation pellets à P2 (kg/h)",
           "pellet_conso_p3": "Consommation pellets à P3 (kg/h)",
           "pellet_conso_p4": "Consommation pellets à P4 (kg/h)",
-          "pellet_conso_p5": "Consommation pellets à P5 (kg/h)"
+          "pellet_conso_p5": "Consommation pellets à P5 (kg/h)",
+          "humidity_comfort_low_pct": "Humidité confort - mini (%)",
+          "humidity_comfort_high_pct": "Humidité confort - maxi (%)"
         },
         "data_description": {
           "eco_power": "1 = P1 (minimum) à 5 = P5 (max).",
@@ -93,7 +95,9 @@
           "pellet_conso_p2": "Débit à P2 (kg/h). Défaut 0.83 kg/h.",
           "pellet_conso_p3": "Débit à P3 (kg/h). Défaut 1.15 kg/h.",
           "pellet_conso_p4": "Débit à P4 (kg/h). Défaut 1.48 kg/h.",
-          "pellet_conso_p5": "Débit à P5 (kg/h). Défaut 1.8 kg/h, le maximum constructeur."
+          "pellet_conso_p5": "Débit à P5 (kg/h). Défaut 1.8 kg/h, le maximum constructeur.",
+          "humidity_comfort_low_pct": "Borne basse de la zone de confort en humidité relative. En dessous, la pièce déclenche l'alerte humidité côté trop sec. 30 % correspond à la recommandation ASHRAE hiver ; monter si vous avez des meubles en bois ou la peau sensible.",
+          "humidity_comfort_high_pct": "Borne haute de la zone de confort. Au-dessus, la pièce déclenche l'alerte côté trop humide. 65 % laisse une petite marge avant le risque de moisissure sur les murs froids ; descendre pour les maisons anciennes."
         }
       }
     }

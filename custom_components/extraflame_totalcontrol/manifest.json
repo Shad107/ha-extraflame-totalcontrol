@@ -1,7 +1,7 @@
 {
   "domain": "extraflame_totalcontrol",
   "name": "Extraflame TotalControl 2.0",
-  "version": "0.2.6",
+  "version": "0.2.7",
   "documentation": "https://github.com/Shad107/ha-extraflame-totalcontrol",
   "issue_tracker": "https://github.com/Shad107/ha-extraflame-totalcontrol/issues",
   "codeowners": ["@Shad107"],

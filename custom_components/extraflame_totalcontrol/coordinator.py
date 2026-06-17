@@ -29,6 +29,8 @@ from .const import (
     CONF_AUTO_DEADBAND,
     CONF_AUTO_MAX_POWER,
     CONF_AUTO_MIN_POWER,
+    CONF_HUMIDITY_COMFORT_HIGH_PCT,
+    CONF_HUMIDITY_COMFORT_LOW_PCT,
     CONF_HUMIDITY_SENSORS,
     CONF_OUTDOOR_TEMP_SENSOR,
     CONF_PASSWORD,
@@ -45,6 +47,8 @@ from .const import (
     DEFAULT_AUTO_DEADBAND,
     DEFAULT_AUTO_MAX_POWER,
     DEFAULT_AUTO_MIN_POWER,
+    DEFAULT_HUMIDITY_COMFORT_HIGH_PCT,
+    DEFAULT_HUMIDITY_COMFORT_LOW_PCT,
     DEFAULT_PELLET_CONSUMPTION_P1_KG_H,
     DEFAULT_PELLET_CONSUMPTION_P2_KG_H,
     DEFAULT_PELLET_CONSUMPTION_P3_KG_H,
@@ -248,6 +252,65 @@ class ExtraflameCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         if not readings:
             return None, breakdown
         return round(sum(readings) / len(readings), 1), breakdown
+
+    # ----- per-room humidity scoring (v0.2.7) -----
+    #
+    # Reuses the same picker as aggregate_room_humidity. The aggregate
+    # tells you the global vibe, these tell you *which room* is the
+    # source of the problem. Useful in winter when the stove dries out
+    # the salon while a back bedroom slides into mould territory.
+
+    def _humidity_bounds(self) -> tuple[float, float]:
+        opts = self.config_entry.options if self.config_entry else {}
+        try:
+            lo = float(opts.get(CONF_HUMIDITY_COMFORT_LOW_PCT, DEFAULT_HUMIDITY_COMFORT_LOW_PCT))
+        except (TypeError, ValueError):
+            lo = DEFAULT_HUMIDITY_COMFORT_LOW_PCT
+        try:
+            hi = float(opts.get(CONF_HUMIDITY_COMFORT_HIGH_PCT, DEFAULT_HUMIDITY_COMFORT_HIGH_PCT))
+        except (TypeError, ValueError):
+            hi = DEFAULT_HUMIDITY_COMFORT_HIGH_PCT
+        if hi < lo:
+            lo, hi = hi, lo
+        return lo, hi
+
+    def _humidity_readings(self) -> dict[str, float]:
+        readings: dict[str, float] = {}
+        for ent in self._selected_humidity_sensors():
+            v = self._read_state_value(ent)
+            if v is not None:
+                readings[ent] = v
+        return readings
+
+    def dampest_room(self) -> tuple[str | None, float | None]:
+        readings = self._humidity_readings()
+        if not readings:
+            return None, None
+        ent = max(readings, key=lambda k: readings[k])
+        return ent, round(readings[ent], 1)
+
+    def driest_room(self) -> tuple[str | None, float | None]:
+        readings = self._humidity_readings()
+        if not readings:
+            return None, None
+        ent = min(readings, key=lambda k: readings[k])
+        return ent, round(readings[ent], 1)
+
+    def humidity_alert(self) -> tuple[bool, list[dict[str, Any]]]:
+        """Return (any_room_out_of_comfort, list_of_offenders).
+
+        Each offender is ``{"entity_id": ..., "value": ..., "side": "low"|"high"}``
+        so dashboards can show which room is too dry / too damp without
+        having to compare against the bounds themselves.
+        """
+        lo, hi = self._humidity_bounds()
+        offenders: list[dict[str, Any]] = []
+        for ent, v in self._humidity_readings().items():
+            if v < lo:
+                offenders.append({"entity_id": ent, "value": v, "side": "low"})
+            elif v > hi:
+                offenders.append({"entity_id": ent, "value": v, "side": "high"})
+        return bool(offenders), offenders
 
     def outdoor_temperature(self) -> float | None:
         opts = self.config_entry.options if self.config_entry else {}

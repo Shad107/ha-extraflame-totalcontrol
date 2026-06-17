@@ -16,6 +16,8 @@ from .const import (
     CONF_AUTO_DEADBAND,
     CONF_AUTO_MAX_POWER,
     CONF_AUTO_MIN_POWER,
+    CONF_HUMIDITY_COMFORT_HIGH_PCT,
+    CONF_HUMIDITY_COMFORT_LOW_PCT,
     CONF_HUMIDITY_SENSORS,
     CONF_OUTDOOR_TEMP_SENSOR,
     CONF_PASSWORD,
@@ -33,6 +35,8 @@ from .const import (
     DEFAULT_AUTO_DEADBAND,
     DEFAULT_AUTO_MAX_POWER,
     DEFAULT_AUTO_MIN_POWER,
+    DEFAULT_HUMIDITY_COMFORT_HIGH_PCT,
+    DEFAULT_HUMIDITY_COMFORT_LOW_PCT,
     DEFAULT_PELLET_CONSUMPTION_P1_KG_H,
     DEFAULT_PELLET_CONSUMPTION_P2_KG_H,
     DEFAULT_PELLET_CONSUMPTION_P3_KG_H,
@@ -158,6 +162,12 @@ class ExtraflameOptionsFlow(config_entries.OptionsFlow):
                     CONF_PELLET_CONSUMPTION_P5_KG_H: float(
                         user_input.get(CONF_PELLET_CONSUMPTION_P5_KG_H, DEFAULT_PELLET_CONSUMPTION_P5_KG_H)
                     ),
+                    CONF_HUMIDITY_COMFORT_LOW_PCT: float(
+                        user_input.get(CONF_HUMIDITY_COMFORT_LOW_PCT, DEFAULT_HUMIDITY_COMFORT_LOW_PCT)
+                    ),
+                    CONF_HUMIDITY_COMFORT_HIGH_PCT: float(
+                        user_input.get(CONF_HUMIDITY_COMFORT_HIGH_PCT, DEFAULT_HUMIDITY_COMFORT_HIGH_PCT)
+                    ),
                 },
             )
 
@@ -264,5 +274,17 @@ class ExtraflameOptionsFlow(config_entries.OptionsFlow):
             CONF_PELLET_CONSUMPTION_P5_KG_H,
             default=opts.get(CONF_PELLET_CONSUMPTION_P5_KG_H, DEFAULT_PELLET_CONSUMPTION_P5_KG_H),
         )] = vol.All(vol.Coerce(float), vol.Range(min=0.1, max=10.0))
+
+        # ----- v0.2.7 humidity comfort band -----
+        # ASHRAE comfort range is 30..60% RH in winter; defaults match
+        # that with a touch of slack at the high end for older homes.
+        schema_dict[vol.Required(
+            CONF_HUMIDITY_COMFORT_LOW_PCT,
+            default=opts.get(CONF_HUMIDITY_COMFORT_LOW_PCT, DEFAULT_HUMIDITY_COMFORT_LOW_PCT),
+        )] = vol.All(vol.Coerce(float), vol.Range(min=10.0, max=50.0))
+        schema_dict[vol.Required(
+            CONF_HUMIDITY_COMFORT_HIGH_PCT,
+            default=opts.get(CONF_HUMIDITY_COMFORT_HIGH_PCT, DEFAULT_HUMIDITY_COMFORT_HIGH_PCT),
+        )] = vol.All(vol.Coerce(float), vol.Range(min=40.0, max=90.0))
 
         return self.async_show_form(step_id="init", data_schema=vol.Schema(schema_dict))

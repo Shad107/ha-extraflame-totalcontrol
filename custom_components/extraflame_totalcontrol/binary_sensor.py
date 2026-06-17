@@ -34,6 +34,7 @@ async def async_setup_entry(
         entities.append(ExtraflameAlarm(coordinator, stove_id))
         entities.append(ExtraflamePelletLowWarning(coordinator, stove_id))
         entities.append(ExtraflamePelletCriticalWarning(coordinator, stove_id))
+        entities.append(ExtraflameHumidityAlert(coordinator, stove_id))
     async_add_entities(entities)
 
 
@@ -169,3 +170,43 @@ class ExtraflamePelletCriticalWarning(
     def is_on(self) -> bool:
         pct = self.coordinator.pellet_remaining_pct(self._stove_id)
         return pct is not None and pct <= PELLET_CRITICAL_WARNING_PCT
+
+
+class ExtraflameHumidityAlert(
+    CoordinatorEntity[ExtraflameCoordinator], BinarySensorEntity
+):
+    """ON when any selected humidity sensor is outside the comfort band.
+
+    The ``offenders`` attribute lists each room that's too dry or too
+    damp, so a single notification action can name the rooms instead of
+    a vague "humidity alert". Side is "low" (dry, < comfort floor) or
+    "high" (damp, > comfort ceiling); bounds are user-tunable from the
+    Configure page.
+    """
+
+    _attr_has_entity_name = True
+    _attr_name = "Humidity alert"
+    _attr_device_class = BinarySensorDeviceClass.PROBLEM
+    _attr_icon = "mdi:water-percent-alert"
+
+    def __init__(self, coordinator: ExtraflameCoordinator, stove_id: str) -> None:
+        super().__init__(coordinator)
+        self._stove_id = stove_id
+        stove = coordinator.data["stoves"][stove_id]["stove"]
+        self._attr_device_info = stove_device_info(stove)
+        self._attr_unique_id = f"extraflame_{stove_id}_humidity_alert"
+
+    @property
+    def is_on(self) -> bool:
+        on, _ = self.coordinator.humidity_alert()
+        return on
+
+    @property
+    def extra_state_attributes(self) -> dict:
+        _on, offenders = self.coordinator.humidity_alert()
+        lo, hi = self.coordinator._humidity_bounds()
+        return {
+            "comfort_low_pct": lo,
+            "comfort_high_pct": hi,
+            "offenders": offenders,
+        }

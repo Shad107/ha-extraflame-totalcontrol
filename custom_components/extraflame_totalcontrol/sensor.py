@@ -64,6 +64,8 @@ async def async_setup_entry(
         entities.append(ExtraflamePelletRemainingKgSensor(coordinator, stove_id))
         entities.append(ExtraflamePelletRemainingPctSensor(coordinator, stove_id))
         entities.append(ExtraflamePelletAutonomyHoursSensor(coordinator, stove_id))
+        entities.append(ExtraflameDampestRoomSensor(coordinator, stove_id))
+        entities.append(ExtraflameDriestRoomSensor(coordinator, stove_id))
     async_add_entities(entities)
 
 
@@ -542,5 +544,79 @@ class ExtraflamePelletAutonomyHoursSensor(
     @property
     def native_value(self) -> float | None:
         return self.coordinator.pellet_autonomy_hours(self._stove_id)
+
+
+class ExtraflameDampestRoomSensor(
+    CoordinatorEntity[ExtraflameCoordinator], SensorEntity
+):
+    """Highest relative humidity among the selected humidity sensors.
+
+    The state is the RH value (so it plots well next to the aggregate).
+    The ``entity_id`` attribute names the room that's wettest, which is
+    typically a bathroom right after a shower or a back bedroom whose
+    cold wall is the first place mould will appear. Watch this over the
+    heating season to spot problem rooms before the symptom does.
+    """
+
+    _attr_has_entity_name = True
+    _attr_name = "Dampest room"
+    _attr_icon = "mdi:water-alert"
+    _attr_device_class = SensorDeviceClass.HUMIDITY
+    _attr_native_unit_of_measurement = "%"
+    _attr_state_class = SensorStateClass.MEASUREMENT
+    _attr_suggested_display_precision = 0
+
+    def __init__(self, coordinator: ExtraflameCoordinator, stove_id: str) -> None:
+        super().__init__(coordinator)
+        self._stove_id = stove_id
+        self._attr_unique_id = f"extraflame_{stove_id}_dampest_room"
+        stove = coordinator.data["stoves"][stove_id]["stove"]
+        self._attr_device_info = stove_device_info(stove)
+
+    @property
+    def native_value(self) -> float | None:
+        _ent, v = self.coordinator.dampest_room()
+        return v
+
+    @property
+    def extra_state_attributes(self) -> dict:
+        ent, _v = self.coordinator.dampest_room()
+        return {"entity_id": ent}
+
+
+class ExtraflameDriestRoomSensor(
+    CoordinatorEntity[ExtraflameCoordinator], SensorEntity
+):
+    """Lowest relative humidity among the selected humidity sensors.
+
+    Pellet stoves dry out the air around them - this points at the room
+    that's tipping below the comfort range first, the one where you'd
+    park a humidifier or close a door.
+    """
+
+    _attr_has_entity_name = True
+    _attr_name = "Driest room"
+    _attr_icon = "mdi:water-off"
+    _attr_device_class = SensorDeviceClass.HUMIDITY
+    _attr_native_unit_of_measurement = "%"
+    _attr_state_class = SensorStateClass.MEASUREMENT
+    _attr_suggested_display_precision = 0
+
+    def __init__(self, coordinator: ExtraflameCoordinator, stove_id: str) -> None:
+        super().__init__(coordinator)
+        self._stove_id = stove_id
+        self._attr_unique_id = f"extraflame_{stove_id}_driest_room"
+        stove = coordinator.data["stoves"][stove_id]["stove"]
+        self._attr_device_info = stove_device_info(stove)
+
+    @property
+    def native_value(self) -> float | None:
+        _ent, v = self.coordinator.driest_room()
+        return v
+
+    @property
+    def extra_state_attributes(self) -> dict:
+        ent, _v = self.coordinator.driest_room()
+        return {"entity_id": ent}
 
 

@@ -28,7 +28,7 @@
     "step": {
       "init": {
         "title": "Extraflame - Configuration",
-        "description": "Tune the integration's behaviour. The form is organised in four sections:\n\n**1. Climate presets** - four named buttons (Eco / Silence / Confort / Boost) you can attach to `climate.preset_modes`. Toggle one off to hide it from the dashboard.\n\n**2. Auto-modulation** - bounds for the HA-side power picker driven by `switch.<stove>_auto_modulation`. P1 is intentionally avoided by default (specialists discourage running pellet stoves at minimum power continuously).\n\n**3. Sensor aggregation** - pull temperature and humidity from any sensor HA already knows about (Tado heads, Aqara, Netatmo, ESPHome customs). The aggregate becomes the input to auto-modulation instead of the embedded probe, which sits next to the burner and reads biased upward.\n\n**4. Pellet level** - the cloud API exposes no hopper level reading, so the integration estimates it by integrating burn rate over time. Enter your hopper capacity and the P1..P5 consumption rates from your stove's manual. Press the Refill pellet button right after topping up to reset the counter.\n\nChanges apply immediately - no restart needed.",
+        "description": "Tune the integration's behaviour. The form is organised in five sections:\n\n**1. Climate presets** - four named buttons (Eco / Silence / Confort / Boost) you can attach to `climate.preset_modes`. Toggle one off to hide it from the dashboard.\n\n**2. Auto-modulation** - bounds for the HA-side power picker driven by `switch.<stove>_auto_modulation`. P1 is intentionally avoided by default (specialists discourage running pellet stoves at minimum power continuously).\n\n**3. Sensor aggregation** - pull temperature and humidity from any sensor HA already knows about (Tado heads, Aqara, Netatmo, ESPHome customs). The aggregate becomes the input to auto-modulation instead of the embedded probe, which sits next to the burner and reads biased upward.\n\n**4. Pellet level** - the cloud API exposes no hopper level reading, so the integration estimates it by integrating burn rate over time. Enter your hopper capacity and the P1..P5 consumption rates from your stove's manual. Press the Refill pellet button right after topping up to reset the counter.\n\n**5. Humidity comfort** - lower/upper RH bounds that drive `binary_sensor.<stove>_humidity_alert`. Defaults match ASHRAE winter guidance (30..65%). Pair with `sensor.<stove>_dampest_room` / `_driest_room` to know which room is the offender.\n\nChanges apply immediately - no restart needed.",
         "data": {
           "eco_enabled": "Eco - enabled",
           "eco_power": "Eco - power level",
@@ -62,7 +62,9 @@
           "pellet_conso_p2": "Pellet consumption at P2 (kg/h)",
           "pellet_conso_p3": "Pellet consumption at P3 (kg/h)",
           "pellet_conso_p4": "Pellet consumption at P4 (kg/h)",
-          "pellet_conso_p5": "Pellet consumption at P5 (kg/h)"
+          "pellet_conso_p5": "Pellet consumption at P5 (kg/h)",
+          "humidity_comfort_low_pct": "Humidity comfort low (%)",
+          "humidity_comfort_high_pct": "Humidity comfort high (%)"
         },
         "data_description": {
           "eco_power": "1=P1 to 5=P5. P1 is the minimum burn level.",
@@ -93,7 +95,9 @@
           "pellet_conso_p2": "Pellet burn rate at P2 (kg/h). Default 0.83 kg/h.",
           "pellet_conso_p3": "Pellet burn rate at P3 (kg/h). Default 1.15 kg/h.",
           "pellet_conso_p4": "Pellet burn rate at P4 (kg/h). Default 1.48 kg/h.",
-          "pellet_conso_p5": "Pellet burn rate at P5 (kg/h). Default 1.8 kg/h, the manufacturer maximum."
+          "pellet_conso_p5": "Pellet burn rate at P5 (kg/h). Default 1.8 kg/h, the manufacturer maximum.",
+          "humidity_comfort_low_pct": "Lower bound of the comfort RH range. Rooms below this trigger the humidity alert as too dry. 30% matches ASHRAE winter guidance; raise it if you have wood furniture or sensitive skin.",
+          "humidity_comfort_high_pct": "Upper bound of the comfort RH range. Rooms above this trigger the humidity alert as too damp. 65% leaves a small margin before mould risk on cold walls; lower for older homes."
         }
       }
     }
