@@ -656,6 +656,9 @@ class ExtraflameCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             "rmse": st.get("rmse"),
             "last_fit_ts": st.get("last_fit_ts"),
             "history_days": st.get("history_days"),
+            "delta_range_c": st.get("delta_range_c"),
+            "delta_std_c": st.get("delta_std_c"),
+            "low_confidence": st.get("low_confidence"),
         }
 
     def _resolve_entity_id(self, unique_id: str) -> str | None:
