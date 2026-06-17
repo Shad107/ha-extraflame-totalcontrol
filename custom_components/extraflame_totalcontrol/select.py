@@ -16,7 +16,7 @@ POWER_OPTIONS = ["P1", "P2", "P3", "P4", "P5"]
 # Teodora Evo the cloud reports `1` while the app shows "Auto", so 0 is
 # off, 1 is auto, and 2+ is manual (manual speed is then driven by the
 # separate mainFanSpeed param). Other models may report 0=off, 1..5=manual,
-# 6=auto — open an issue with observed values if your readings differ.
+# 6=auto - open an issue with observed values if your readings differ.
 FAN_MODE_OPTIONS = {0: "Off", 1: "Auto", 2: "Manuel"}
 FAN_MODE_NAMES = list(FAN_MODE_OPTIONS.values())
 FAN_MODE_BY_NAME = {v: k for k, v in FAN_MODE_OPTIONS.items()}

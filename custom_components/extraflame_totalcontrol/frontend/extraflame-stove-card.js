@@ -1,12 +1,12 @@
 /**
- * Extraflame Stove Card — Home Assistant Lovelace custom card
+ * Extraflame Stove Card - Home Assistant Lovelace custom card
  *
  * Reads a "visual" sensor exposed by the Shad107/ha-extraflame-totalcontrol
  * integration (state = stove name, attribute carries an inline SVG of the
  * stove). Renders the SVG inside an ha-card. Click on the SVG opens
  * more-info on the climate entity (or any entity passed via tap_action_entity).
  *
- * Pure vanilla web-component — no LitElement dependency, no build step.
+ * Pure vanilla web-component - no LitElement dependency, no build step.
  * Compatible with Home Assistant >= 2024.1.
  */
 

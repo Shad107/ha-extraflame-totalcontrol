@@ -13,7 +13,7 @@ from homeassistant.components.sensor import (
     SensorStateClass,
 )
 from homeassistant.config_entries import ConfigEntry
-from homeassistant.const import UnitOfTemperature
+from homeassistant.const import UnitOfMass, UnitOfTemperature, UnitOfTime
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
@@ -61,6 +61,9 @@ async def async_setup_entry(
         entities.append(ExtraflameAggregateHumiditySensor(coordinator, stove_id))
         entities.append(ExtraflameOutdoorTempSensor(coordinator, stove_id))
         entities.append(ExtraflameIndoorOutdoorDeltaSensor(coordinator, stove_id))
+        entities.append(ExtraflamePelletRemainingKgSensor(coordinator, stove_id))
+        entities.append(ExtraflamePelletRemainingPctSensor(coordinator, stove_id))
+        entities.append(ExtraflamePelletAutonomyHoursSensor(coordinator, stove_id))
     async_add_entities(entities)
 
 
@@ -252,20 +255,20 @@ class ExtraflameThermalDeltaSensor(CoordinatorEntity[ExtraflameCoordinator], Sen
 
 
 class ExtraflameBurnIntensitySensor(CoordinatorEntity[ExtraflameCoordinator], SensorEntity):
-    """``power / targetPower * 100`` — bi-modal ratio backed by the manual.
+    """``power / targetPower * 100`` - bi-modal ratio backed by the manual.
 
     Per the Teodora Evo official manual, the stove operates in one of
     two modes selected by the "Stand By function" toggle in the stove
     settings:
 
-    - **Stand By OFF (factory default)** — when the room reaches the
+    - **Stand By OFF (factory default)** - when the room reaches the
       setpoint, the stove switches to the **minimum** burn level
       (machineState 5 "MODULATION") instead of shutting off. ratio
       hovers around ``1 / targetPower * 100`` while in MODULATION, and
       jumps back to ~100 % when the room cools below the setpoint and
       the stove re-enters WORK (state 6).
 
-    - **Stand By ON** — when the room reaches setpoint + DELTA T OFF,
+    - **Stand By ON** - when the room reaches setpoint + DELTA T OFF,
       the stove shuts off entirely (machineState 9 "STAND BY").
       ratio drops to 0 % until the room cools enough to re-ignite.
 
@@ -304,7 +307,7 @@ class ExtraflameAggregateTempSensor(CoordinatorEntity[ExtraflameCoordinator], Se
     Combines the stove's built-in probe (``roomTemp``) with any external
     HA temperature sensors the user picked from the Options page. The
     auto-modulation algorithm uses this value instead of the lone
-    embedded probe — which sits close enough to the burner to read
+    embedded probe - which sits close enough to the burner to read
     biased upward.
 
     The ``sources`` attribute reports each input value so the dashboard
@@ -441,5 +444,103 @@ class ExtraflameIndoorOutdoorDeltaSensor(
     @property
     def native_value(self) -> float | None:
         return self.coordinator.indoor_outdoor_delta(self._stove_id)
+
+
+class ExtraflamePelletRemainingKgSensor(
+    CoordinatorEntity[ExtraflameCoordinator], SensorEntity
+):
+    """Estimated pellet kilos left in the hopper.
+
+    The cloud API exposes no level reading and the Teodora Evo has no
+    physical level sensor, so the value is reconstructed by integrating
+    burn rate (kg/h, interpolated between P1 and P5 per the datasheet)
+    over time since the last user-confirmed refill. Press the matching
+    Refill button when you top up the hopper to reset the counter.
+    """
+
+    _attr_has_entity_name = True
+    _attr_name = "Pellet remaining"
+    _attr_icon = "mdi:weight-kilogram"
+    _attr_native_unit_of_measurement = UnitOfMass.KILOGRAMS
+    _attr_device_class = SensorDeviceClass.WEIGHT
+    _attr_state_class = SensorStateClass.MEASUREMENT
+    _attr_suggested_display_precision = 1
+
+    def __init__(self, coordinator: ExtraflameCoordinator, stove_id: str) -> None:
+        super().__init__(coordinator)
+        self._stove_id = stove_id
+        self._attr_unique_id = f"extraflame_{stove_id}_pellet_remaining_kg"
+        stove = coordinator.data["stoves"][stove_id]["stove"]
+        self._attr_device_info = stove_device_info(stove)
+
+    @property
+    def native_value(self) -> float | None:
+        return self.coordinator.pellet_remaining_kg(self._stove_id)
+
+    @property
+    def extra_state_attributes(self) -> dict:
+        return {
+            "hopper_capacity_kg": self.coordinator.pellet_capacity_kg(),
+        }
+
+
+class ExtraflamePelletRemainingPctSensor(
+    CoordinatorEntity[ExtraflameCoordinator], SensorEntity
+):
+    """Same level as ``pellet_remaining`` but expressed as a percentage.
+
+    Convenience for dashboards that want a 0..100 % gauge without
+    knowing the configured hopper capacity.
+    """
+
+    _attr_has_entity_name = True
+    _attr_name = "Pellet level"
+    _attr_icon = "mdi:gauge"
+    _attr_native_unit_of_measurement = "%"
+    _attr_state_class = SensorStateClass.MEASUREMENT
+    _attr_suggested_display_precision = 0
+
+    def __init__(self, coordinator: ExtraflameCoordinator, stove_id: str) -> None:
+        super().__init__(coordinator)
+        self._stove_id = stove_id
+        self._attr_unique_id = f"extraflame_{stove_id}_pellet_remaining_pct"
+        stove = coordinator.data["stoves"][stove_id]["stove"]
+        self._attr_device_info = stove_device_info(stove)
+
+    @property
+    def native_value(self) -> float | None:
+        return self.coordinator.pellet_remaining_pct(self._stove_id)
+
+
+class ExtraflamePelletAutonomyHoursSensor(
+    CoordinatorEntity[ExtraflameCoordinator], SensorEntity
+):
+    """Hours of burn left at the current power level.
+
+    Returns ``unknown`` when the stove is off, in cooldown, or in
+    STAND BY - there's no meaningful instantaneous rate to project from.
+    For a forecast at a chosen target power, use a template:
+    ``{{ states('sensor.<stove>_pellet_remaining') | float /
+         (rate_kg_h_at_target_power) }}``
+    """
+
+    _attr_has_entity_name = True
+    _attr_name = "Pellet autonomy"
+    _attr_icon = "mdi:timer-sand"
+    _attr_native_unit_of_measurement = UnitOfTime.HOURS
+    _attr_device_class = SensorDeviceClass.DURATION
+    _attr_state_class = SensorStateClass.MEASUREMENT
+    _attr_suggested_display_precision = 1
+
+    def __init__(self, coordinator: ExtraflameCoordinator, stove_id: str) -> None:
+        super().__init__(coordinator)
+        self._stove_id = stove_id
+        self._attr_unique_id = f"extraflame_{stove_id}_pellet_autonomy_hours"
+        stove = coordinator.data["stoves"][stove_id]["stove"]
+        self._attr_device_info = stove_device_info(stove)
+
+    @property
+    def native_value(self) -> float | None:
+        return self.coordinator.pellet_autonomy_hours(self._stove_id)
 
 

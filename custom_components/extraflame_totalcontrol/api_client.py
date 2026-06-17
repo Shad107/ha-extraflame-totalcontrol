@@ -2,7 +2,7 @@
 
 Reverse-engineered from the official Android app (`com.extraflame.smartstove`).
 Targets `https://appapi.extraflame.it/`. The same backend powers La Nordica
-TotalControl 2.0 — works for any Extraflame / La Nordica pellet stove
+TotalControl 2.0 - works for any Extraflame / La Nordica pellet stove
 registered to a TotalControl account.
 
 Example:

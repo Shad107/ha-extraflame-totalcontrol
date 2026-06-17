@@ -20,6 +20,9 @@ from .api_client import (
 
 from .models import resolve_model
 
+from homeassistant.helpers.storage import Store
+import time as _time
+
 from .const import (
     AGGREGATION_MODES,
     CONF_AGGREGATION_MODE,
@@ -29,6 +32,12 @@ from .const import (
     CONF_HUMIDITY_SENSORS,
     CONF_OUTDOOR_TEMP_SENSOR,
     CONF_PASSWORD,
+    CONF_PELLET_CONSUMPTION_P1_KG_H,
+    CONF_PELLET_CONSUMPTION_P2_KG_H,
+    CONF_PELLET_CONSUMPTION_P3_KG_H,
+    CONF_PELLET_CONSUMPTION_P4_KG_H,
+    CONF_PELLET_CONSUMPTION_P5_KG_H,
+    CONF_PELLET_HOPPER_CAPACITY_KG,
     CONF_POLL_INTERVAL,
     CONF_TEMP_SENSORS,
     CONF_USERNAME,
@@ -36,8 +45,15 @@ from .const import (
     DEFAULT_AUTO_DEADBAND,
     DEFAULT_AUTO_MAX_POWER,
     DEFAULT_AUTO_MIN_POWER,
+    DEFAULT_PELLET_CONSUMPTION_P1_KG_H,
+    DEFAULT_PELLET_CONSUMPTION_P2_KG_H,
+    DEFAULT_PELLET_CONSUMPTION_P3_KG_H,
+    DEFAULT_PELLET_CONSUMPTION_P4_KG_H,
+    DEFAULT_PELLET_CONSUMPTION_P5_KG_H,
+    DEFAULT_PELLET_HOPPER_CAPACITY_KG,
     DEFAULT_POLL_INTERVAL,
     DOMAIN,
+    PELLET_STORE_VERSION,
 )
 
 _LOGGER = logging.getLogger(__name__)
@@ -61,9 +77,18 @@ class ExtraflameCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         )
         # Registered Auto-Modulation switch instances, keyed by stove_id.
         self._auto_switches: dict[str, Any] = {}
+        # Pellet level tracking - persisted state survives HA restarts.
+        # Structure: {stove_id: {"remaining_kg": float, "last_ts": float}}
+        self._pellet_state: dict[str, dict[str, float]] = {}
+        self._pellet_store: Store = Store(
+            hass, PELLET_STORE_VERSION, f"{DOMAIN}_pellet_{entry.entry_id}"
+        )
+        self._pellet_loaded: bool = False
 
     async def _async_update_data(self) -> dict[str, Any]:
         try:
+            if not self._pellet_loaded:
+                await self._async_load_pellet_state()
             stoves = await self._client.list_stoves()
             snapshot: dict[str, Any] = {"stoves": {}}
             for s in stoves:
@@ -78,6 +103,11 @@ class ExtraflameCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                 sw = self._auto_switches.get(stove_id)
                 if sw is not None and getattr(sw, "is_on", False):
                     await self._apply_auto_modulation_from_snapshot(stove_id, snapshot)
+            # Integrate pellet consumption based on the just-fetched
+            # power/state. Done after auto-modulation in case it changed
+            # the target - we still measure the instantaneous burn rate
+            # at this tick, which is correct for an integrator.
+            await self._update_pellet_consumption(snapshot)
             return snapshot
         except ExtraflameAuthError as e:
             raise UpdateFailed(f"Authentication failed: {e}") from e
@@ -176,7 +206,7 @@ class ExtraflameCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         - ``min``         : the coldest measurement wins (protective)
         - ``max``         : the warmest measurement wins (comfort)
         - ``weighted_avg``: equal-weight mean of all valid readings
-                            (default — stove probe is one vote among the
+                            (default - stove probe is one vote among the
                             external sensors)
         """
         breakdown: dict[str, float | None] = {}
@@ -240,6 +270,178 @@ class ExtraflameCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         if indoor is None or outdoor is None:
             return None
         return round(indoor - outdoor, 1)
+
+    # ----- pellet hopper level tracking (v0.2.6) -----
+
+    async def _async_load_pellet_state(self) -> None:
+        """Load persisted per-stove pellet state from .storage.
+
+        The hopper level is reconstructed from the last refill timestamp
+        plus the integral of burn rate since then. Stored as the running
+        value so consecutive restarts don't have to replay history - we
+        just keep ticking from where we left off.
+        """
+        data = await self._pellet_store.async_load() or {}
+        stoves = data.get("stoves") or {}
+        if isinstance(stoves, dict):
+            for sid, st in stoves.items():
+                if not isinstance(st, dict):
+                    continue
+                try:
+                    self._pellet_state[sid] = {
+                        "remaining_kg": float(st.get("remaining_kg", self.pellet_capacity_kg())),
+                        "last_ts": float(st.get("last_ts", _time.time())),
+                    }
+                except (TypeError, ValueError):
+                    continue
+        self._pellet_loaded = True
+
+    async def _async_save_pellet_state(self) -> None:
+        await self._pellet_store.async_save({"stoves": self._pellet_state})
+
+    def pellet_capacity_kg(self) -> float:
+        opts = self.config_entry.options if self.config_entry else {}
+        try:
+            return float(opts.get(CONF_PELLET_HOPPER_CAPACITY_KG, DEFAULT_PELLET_HOPPER_CAPACITY_KG))
+        except (TypeError, ValueError):
+            return DEFAULT_PELLET_HOPPER_CAPACITY_KG
+
+    def pellet_consumption_rate_kg_h(self, power: int) -> float:
+        """Return burn rate at the given power level.
+
+        P1..P5 are pulled from the options (user-tunable per stove model).
+        Values between integers fall back to linear interpolation - useful
+        only for visualisation since the cloud API always reports an
+        integer targetPower.
+        """
+        opts = self.config_entry.options if self.config_entry else {}
+        rates = {
+            1: float(opts.get(CONF_PELLET_CONSUMPTION_P1_KG_H, DEFAULT_PELLET_CONSUMPTION_P1_KG_H)),
+            2: float(opts.get(CONF_PELLET_CONSUMPTION_P2_KG_H, DEFAULT_PELLET_CONSUMPTION_P2_KG_H)),
+            3: float(opts.get(CONF_PELLET_CONSUMPTION_P3_KG_H, DEFAULT_PELLET_CONSUMPTION_P3_KG_H)),
+            4: float(opts.get(CONF_PELLET_CONSUMPTION_P4_KG_H, DEFAULT_PELLET_CONSUMPTION_P4_KG_H)),
+            5: float(opts.get(CONF_PELLET_CONSUMPTION_P5_KG_H, DEFAULT_PELLET_CONSUMPTION_P5_KG_H)),
+        }
+        if power <= 1:
+            return rates[1]
+        if power >= 5:
+            return rates[5]
+        lo = int(power)
+        hi = lo + 1
+        frac = power - lo
+        return rates[lo] + (rates[hi] - rates[lo]) * frac
+
+    @staticmethod
+    def _instant_power_from_params(params: dict[str, Any]) -> int:
+        """Determine the burn level the stove is currently at.
+
+        The Teodora Evo doesn't pick a fractional power on its own - but
+        in MODULATION it drops to P1 silently while ``targetPower`` keeps
+        the user-set value. So we read ``power`` (the actual current burn
+        level) instead, falling back to ``targetPower`` if it's missing.
+        Returns 0 if the stove isn't burning (OFF / STAND BY / cooling),
+        so the integrator pauses cleanly.
+        """
+        ms_p = params.get("machineState")
+        if ms_p is not None and ms_p.value is not None:
+            try:
+                ms = int(float(ms_p.value))
+            except (TypeError, ValueError):
+                ms = None
+            else:
+                from .const import MACHINE_STATE_RUNNING
+                if ms not in MACHINE_STATE_RUNNING:
+                    return 0
+        cur = params.get("power")
+        if cur is not None and cur.value is not None:
+            try:
+                v = int(float(cur.value))
+                if v > 0:
+                    return max(1, min(5, v))
+            except (TypeError, ValueError):
+                pass
+        tp = params.get("targetPower")
+        if tp is not None and tp.value is not None:
+            try:
+                return max(1, min(5, int(float(tp.value))))
+            except (TypeError, ValueError):
+                pass
+        return 0
+
+    async def _update_pellet_consumption(self, snapshot: dict[str, Any]) -> None:
+        """Subtract the kilos burned since the last tick from each hopper."""
+        now = _time.time()
+        capacity = self.pellet_capacity_kg()
+        changed = False
+        for stove_id, snap in snapshot["stoves"].items():
+            params = snap.get("parameters") or {}
+            st = self._pellet_state.get(stove_id)
+            if st is None:
+                # First time we see this stove - assume hopper full so
+                # the autonomy estimate is meaningful from the start.
+                # The user calibrates with the refill button afterward.
+                self._pellet_state[stove_id] = {
+                    "remaining_kg": capacity,
+                    "last_ts": now,
+                }
+                changed = True
+                continue
+            elapsed_h = max(0.0, (now - st["last_ts"]) / 3600.0)
+            power = self._instant_power_from_params(params)
+            if power > 0 and elapsed_h > 0:
+                rate = self.pellet_consumption_rate_kg_h(power)
+                burned = rate * elapsed_h
+                st["remaining_kg"] = max(0.0, st["remaining_kg"] - burned)
+                changed = True
+            st["last_ts"] = now
+        if changed:
+            await self._async_save_pellet_state()
+
+    def pellet_remaining_kg(self, stove_id: str) -> float | None:
+        st = self._pellet_state.get(stove_id)
+        if st is None:
+            return None
+        return round(st["remaining_kg"], 2)
+
+    def pellet_remaining_pct(self, stove_id: str) -> float | None:
+        st = self._pellet_state.get(stove_id)
+        if st is None:
+            return None
+        cap = self.pellet_capacity_kg()
+        if cap <= 0:
+            return None
+        return round(min(100.0, max(0.0, st["remaining_kg"] / cap * 100.0)), 1)
+
+    def pellet_autonomy_hours(self, stove_id: str) -> float | None:
+        """Hours of burn left at the current power level.
+
+        Returns ``None`` when the stove is not burning (no rate, no
+        meaningful autonomy). For a "what-if at P3" forecast, dashboards
+        should multiply remaining_kg by 1 / rate(target_power) themselves.
+        """
+        st = self._pellet_state.get(stove_id)
+        if st is None or self.data is None:
+            return None
+        snap = self.data.get("stoves", {}).get(stove_id, {})
+        params = snap.get("parameters") or {}
+        power = self._instant_power_from_params(params)
+        if power <= 0:
+            return None
+        rate = self.pellet_consumption_rate_kg_h(power)
+        if rate <= 0:
+            return None
+        return round(st["remaining_kg"] / rate, 1)
+
+    async def async_refill_pellet(self, stove_id: str) -> None:
+        """Reset the hopper counter - user pressed the Refill button."""
+        if not self._pellet_loaded:
+            await self._async_load_pellet_state()
+        self._pellet_state[stove_id] = {
+            "remaining_kg": self.pellet_capacity_kg(),
+            "last_ts": _time.time(),
+        }
+        await self._async_save_pellet_state()
+        self.async_update_listeners()
 
     async def async_close(self) -> None:
         await self._client.close()

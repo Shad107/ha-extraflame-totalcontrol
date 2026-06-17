@@ -28,7 +28,7 @@
     "step": {
       "init": {
         "title": "Extraflame - Configuration",
-        "description": "Tune the integration's behaviour. The form is organised in three sections:\n\n**1. Climate presets** - four named buttons (Eco / Silence / Confort / Boost) you can attach to `climate.preset_modes`. Toggle one off to hide it from the dashboard.\n\n**2. Auto-modulation** - bounds for the HA-side power picker driven by `switch.<stove>_auto_modulation`. P1 is intentionally avoided by default (specialists discourage running pellet stoves at minimum power continuously).\n\n**3. Sensor aggregation** - pull temperature and humidity from any sensor HA already knows about (Tado heads, Aqara, Netatmo, ESPHome customs). The aggregate becomes the input to auto-modulation instead of the embedded probe, which sits next to the burner and reads biased upward.\n\nChanges apply immediately - no restart needed.",
+        "description": "Tune the integration's behaviour. The form is organised in four sections:\n\n**1. Climate presets** - four named buttons (Eco / Silence / Confort / Boost) you can attach to `climate.preset_modes`. Toggle one off to hide it from the dashboard.\n\n**2. Auto-modulation** - bounds for the HA-side power picker driven by `switch.<stove>_auto_modulation`. P1 is intentionally avoided by default (specialists discourage running pellet stoves at minimum power continuously).\n\n**3. Sensor aggregation** - pull temperature and humidity from any sensor HA already knows about (Tado heads, Aqara, Netatmo, ESPHome customs). The aggregate becomes the input to auto-modulation instead of the embedded probe, which sits next to the burner and reads biased upward.\n\n**4. Pellet level** - the cloud API exposes no hopper level reading, so the integration estimates it by integrating burn rate over time. Enter your hopper capacity and the P1..P5 consumption rates from your stove's manual. Press the Refill pellet button right after topping up to reset the counter.\n\nChanges apply immediately - no restart needed.",
         "data": {
           "eco_enabled": "Eco - enabled",
           "eco_power": "Eco - power level",
@@ -56,7 +56,13 @@
           "temp_sensors": "Temperature sensors",
           "humidity_sensors": "Humidity sensors",
           "aggregation_mode": "Aggregation mode",
-          "outdoor_temp_sensor": "Outdoor temperature sensor"
+          "outdoor_temp_sensor": "Outdoor temperature sensor",
+          "pellet_hopper_capacity_kg": "Pellet hopper capacity (kg)",
+          "pellet_conso_p1": "Pellet consumption at P1 (kg/h)",
+          "pellet_conso_p2": "Pellet consumption at P2 (kg/h)",
+          "pellet_conso_p3": "Pellet consumption at P3 (kg/h)",
+          "pellet_conso_p4": "Pellet consumption at P4 (kg/h)",
+          "pellet_conso_p5": "Pellet consumption at P5 (kg/h)"
         },
         "data_description": {
           "eco_power": "1=P1 to 5=P5. P1 is the minimum burn level.",
@@ -81,7 +87,13 @@
           "temp_sensors": "Multi-select any sensor in HA with device_class temperature. The integration averages them with the stove's embedded probe to produce sensor.<stove>_aggregate_room_temperature, used by auto-modulation. Pick your Tado heads, Aqara probes, Netatmo indoor - anything.",
           "humidity_sensors": "Multi-select any sensor in HA with device_class humidity. Averaged into sensor.<stove>_aggregate_room_humidity. Not used to drive the stove yet - exposed for dashboards and future humidity-based automations.",
           "aggregation_mode": "How to combine the temperature sources: weighted_avg (equal-weight mean, default), min (protect the coldest room), max (comfort = the warmest room), stove_only (revert to v0.1.x behaviour and ignore the externals).",
-          "outdoor_temp_sensor": "Single sensor used as the outdoor reference for the indoor/outdoor delta and the v0.3.0 thermal-inertia learner. Pick your Netatmo outdoor module, Tado outdoor probe, or fall back on Météo France."
+          "outdoor_temp_sensor": "Single sensor used as the outdoor reference for the indoor/outdoor delta and the v0.3.0 thermal-inertia learner. Pick your Netatmo outdoor module, Tado outdoor probe, or fall back on Météo France.",
+          "pellet_hopper_capacity_kg": "Usable hopper capacity in kilograms. Teodora Evo ships at 14 kg per datasheet; some users observe ~12 kg before the auger starts to suck air. Adjust to whatever amount you actually pour in when you say it's full.",
+          "pellet_conso_p1": "Pellet burn rate at power level P1, in kg per hour. Default 0.5 kg/h is the Teodora Evo manual figure. If your stove model differs, edit here.",
+          "pellet_conso_p2": "Pellet burn rate at P2 (kg/h). Default 0.83 kg/h.",
+          "pellet_conso_p3": "Pellet burn rate at P3 (kg/h). Default 1.15 kg/h.",
+          "pellet_conso_p4": "Pellet burn rate at P4 (kg/h). Default 1.48 kg/h.",
+          "pellet_conso_p5": "Pellet burn rate at P5 (kg/h). Default 1.8 kg/h, the manufacturer maximum."
         }
       }
     }

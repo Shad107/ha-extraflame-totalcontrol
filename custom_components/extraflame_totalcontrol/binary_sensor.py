@@ -10,7 +10,11 @@ from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
-from .const import DOMAIN
+from .const import (
+    DOMAIN,
+    PELLET_CRITICAL_WARNING_PCT,
+    PELLET_LOW_WARNING_PCT,
+)
 from .coordinator import ExtraflameCoordinator, stove_device_info
 
 
@@ -28,6 +32,8 @@ async def async_setup_entry(
         entities.append(ExtraflameOnlineSensor(coordinator, stove_id))
         entities.append(ExtraflameSmokeWarning(coordinator, stove_id))
         entities.append(ExtraflameAlarm(coordinator, stove_id))
+        entities.append(ExtraflamePelletLowWarning(coordinator, stove_id))
+        entities.append(ExtraflamePelletCriticalWarning(coordinator, stove_id))
     async_add_entities(entities)
 
 
@@ -69,10 +75,10 @@ class ExtraflameSmokeWarning(CoordinatorEntity[ExtraflameCoordinator], BinarySen
 
     The ``smokeTemp`` parameter is exposed by the TotalControl 2.0 cloud
     API but not surfaced by the official app. Above ~400 °C, steel and
-    cast-iron flue pipes start glowing red — a fire-hazard warning sign
+    cast-iron flue pipes start glowing red - a fire-hazard warning sign
     well known on stove communities. Crossing this threshold typically
     means too much air, draft pulled too high, or oversized pellet
-    feeding — worth investigating before the next firing.
+    feeding - worth investigating before the next firing.
     """
 
     _attr_has_entity_name = True
@@ -117,3 +123,49 @@ class ExtraflameAlarm(CoordinatorEntity[ExtraflameCoordinator], BinarySensorEnti
     def extra_state_attributes(self) -> dict:
         v = _param(self.coordinator, self._stove_id, "alarmCode")
         return {"alarm_code": v}
+
+
+class ExtraflamePelletLowWarning(
+    CoordinatorEntity[ExtraflameCoordinator], BinarySensorEntity
+):
+    """ON when the estimated hopper level drops below the low threshold."""
+
+    _attr_has_entity_name = True
+    _attr_name = "Pellet low"
+    _attr_device_class = BinarySensorDeviceClass.PROBLEM
+    _attr_icon = "mdi:fuel"
+
+    def __init__(self, coordinator: ExtraflameCoordinator, stove_id: str) -> None:
+        super().__init__(coordinator)
+        self._stove_id = stove_id
+        stove = coordinator.data["stoves"][stove_id]["stove"]
+        self._attr_device_info = stove_device_info(stove)
+        self._attr_unique_id = f"extraflame_{stove_id}_pellet_low_warning"
+
+    @property
+    def is_on(self) -> bool:
+        pct = self.coordinator.pellet_remaining_pct(self._stove_id)
+        return pct is not None and pct <= PELLET_LOW_WARNING_PCT
+
+
+class ExtraflamePelletCriticalWarning(
+    CoordinatorEntity[ExtraflameCoordinator], BinarySensorEntity
+):
+    """ON when the hopper is near empty - refill before the next session."""
+
+    _attr_has_entity_name = True
+    _attr_name = "Pellet critical"
+    _attr_device_class = BinarySensorDeviceClass.PROBLEM
+    _attr_icon = "mdi:fuel-cell"
+
+    def __init__(self, coordinator: ExtraflameCoordinator, stove_id: str) -> None:
+        super().__init__(coordinator)
+        self._stove_id = stove_id
+        stove = coordinator.data["stoves"][stove_id]["stove"]
+        self._attr_device_info = stove_device_info(stove)
+        self._attr_unique_id = f"extraflame_{stove_id}_pellet_critical_warning"
+
+    @property
+    def is_on(self) -> bool:
+        pct = self.coordinator.pellet_remaining_pct(self._stove_id)
+        return pct is not None and pct <= PELLET_CRITICAL_WARNING_PCT

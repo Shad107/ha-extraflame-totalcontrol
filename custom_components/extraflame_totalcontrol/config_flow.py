@@ -19,6 +19,12 @@ from .const import (
     CONF_HUMIDITY_SENSORS,
     CONF_OUTDOOR_TEMP_SENSOR,
     CONF_PASSWORD,
+    CONF_PELLET_CONSUMPTION_P1_KG_H,
+    CONF_PELLET_CONSUMPTION_P2_KG_H,
+    CONF_PELLET_CONSUMPTION_P3_KG_H,
+    CONF_PELLET_CONSUMPTION_P4_KG_H,
+    CONF_PELLET_CONSUMPTION_P5_KG_H,
+    CONF_PELLET_HOPPER_CAPACITY_KG,
     CONF_POLL_INTERVAL,
     CONF_PRESETS,
     CONF_TEMP_SENSORS,
@@ -27,6 +33,12 @@ from .const import (
     DEFAULT_AUTO_DEADBAND,
     DEFAULT_AUTO_MAX_POWER,
     DEFAULT_AUTO_MIN_POWER,
+    DEFAULT_PELLET_CONSUMPTION_P1_KG_H,
+    DEFAULT_PELLET_CONSUMPTION_P2_KG_H,
+    DEFAULT_PELLET_CONSUMPTION_P3_KG_H,
+    DEFAULT_PELLET_CONSUMPTION_P4_KG_H,
+    DEFAULT_PELLET_CONSUMPTION_P5_KG_H,
+    DEFAULT_PELLET_HOPPER_CAPACITY_KG,
     DEFAULT_POLL_INTERVAL,
     DEFAULT_PRESETS,
     DOMAIN,
@@ -42,7 +54,7 @@ class ExtraflameConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         config_entry: config_entries.ConfigEntry,
     ) -> "ExtraflameOptionsFlow":
         # In HA 2025.12+ the ConfigEntry is injected on the parent
-        # automatically — instantiating with no args is the supported
+        # automatically - instantiating with no args is the supported
         # pattern. We used to pass the entry to __init__ and assign it
         # to self.config_entry, but that attribute is now a property
         # with no setter and that explodes with a 500 in the UI.
@@ -94,7 +106,7 @@ FAN_MODE_CHOICES = {0: "Off", 1: "Auto", 2: "Manuel"}
 class ExtraflameOptionsFlow(config_entries.OptionsFlow):
     """User-editable presets. One step, one form, all four presets shown.
 
-    No custom __init__ — HA's flow framework injects ``self.config_entry``
+    No custom __init__ - HA's flow framework injects ``self.config_entry``
     via the parent class. Assigning it ourselves blows up with an
     ``AttributeError: property has no setter`` on HA 2025.12+.
     """
@@ -128,6 +140,24 @@ class ExtraflameOptionsFlow(config_entries.OptionsFlow):
                         CONF_AGGREGATION_MODE, DEFAULT_AGGREGATION_MODE
                     ),
                     CONF_OUTDOOR_TEMP_SENSOR: user_input.get(CONF_OUTDOOR_TEMP_SENSOR) or None,
+                    CONF_PELLET_HOPPER_CAPACITY_KG: float(
+                        user_input.get(CONF_PELLET_HOPPER_CAPACITY_KG, DEFAULT_PELLET_HOPPER_CAPACITY_KG)
+                    ),
+                    CONF_PELLET_CONSUMPTION_P1_KG_H: float(
+                        user_input.get(CONF_PELLET_CONSUMPTION_P1_KG_H, DEFAULT_PELLET_CONSUMPTION_P1_KG_H)
+                    ),
+                    CONF_PELLET_CONSUMPTION_P2_KG_H: float(
+                        user_input.get(CONF_PELLET_CONSUMPTION_P2_KG_H, DEFAULT_PELLET_CONSUMPTION_P2_KG_H)
+                    ),
+                    CONF_PELLET_CONSUMPTION_P3_KG_H: float(
+                        user_input.get(CONF_PELLET_CONSUMPTION_P3_KG_H, DEFAULT_PELLET_CONSUMPTION_P3_KG_H)
+                    ),
+                    CONF_PELLET_CONSUMPTION_P4_KG_H: float(
+                        user_input.get(CONF_PELLET_CONSUMPTION_P4_KG_H, DEFAULT_PELLET_CONSUMPTION_P4_KG_H)
+                    ),
+                    CONF_PELLET_CONSUMPTION_P5_KG_H: float(
+                        user_input.get(CONF_PELLET_CONSUMPTION_P5_KG_H, DEFAULT_PELLET_CONSUMPTION_P5_KG_H)
+                    ),
                 },
             )
 
@@ -164,7 +194,7 @@ class ExtraflameOptionsFlow(config_entries.OptionsFlow):
 
         # ----- v0.2.0 sensor aggregation section -----
         # Picker shows any sensor in HA with device_class temperature /
-        # humidity, grouped by area badge — so Tado TRV heads, Aqara
+        # humidity, grouped by area badge - so Tado TRV heads, Aqara
         # probes, ESPHome customs, anything appears automatically.
         schema_dict[vol.Optional(
             CONF_TEMP_SENSORS,
@@ -191,7 +221,7 @@ class ExtraflameOptionsFlow(config_entries.OptionsFlow):
             default=opts.get(CONF_AGGREGATION_MODE, DEFAULT_AGGREGATION_MODE),
         )] = vol.In(list(AGGREGATION_MODES))
 
-        # Outdoor temperature — single source for v0.3.0 RC model fit
+        # Outdoor temperature - single source for v0.3.0 RC model fit
         # and v0.4.0 anticipatory pre-heating. Default suggestion left
         # empty so users with no outdoor probe stay opted-out.
         schema_dict[vol.Optional(
@@ -204,5 +234,35 @@ class ExtraflameOptionsFlow(config_entries.OptionsFlow):
                 multiple=False,
             )
         )
+
+        # ----- v0.2.6 pellet hopper tracking section -----
+        # Capacity is per-stove (Teodora Evo ships 14 kg by spec, some
+        # users observe ~12 kg of usable volume). P1..P5 rates are
+        # interpolated linearly to estimate consumption at the live
+        # power level.
+        schema_dict[vol.Required(
+            CONF_PELLET_HOPPER_CAPACITY_KG,
+            default=opts.get(CONF_PELLET_HOPPER_CAPACITY_KG, DEFAULT_PELLET_HOPPER_CAPACITY_KG),
+        )] = vol.All(vol.Coerce(float), vol.Range(min=1.0, max=60.0))
+        schema_dict[vol.Required(
+            CONF_PELLET_CONSUMPTION_P1_KG_H,
+            default=opts.get(CONF_PELLET_CONSUMPTION_P1_KG_H, DEFAULT_PELLET_CONSUMPTION_P1_KG_H),
+        )] = vol.All(vol.Coerce(float), vol.Range(min=0.1, max=10.0))
+        schema_dict[vol.Required(
+            CONF_PELLET_CONSUMPTION_P2_KG_H,
+            default=opts.get(CONF_PELLET_CONSUMPTION_P2_KG_H, DEFAULT_PELLET_CONSUMPTION_P2_KG_H),
+        )] = vol.All(vol.Coerce(float), vol.Range(min=0.1, max=10.0))
+        schema_dict[vol.Required(
+            CONF_PELLET_CONSUMPTION_P3_KG_H,
+            default=opts.get(CONF_PELLET_CONSUMPTION_P3_KG_H, DEFAULT_PELLET_CONSUMPTION_P3_KG_H),
+        )] = vol.All(vol.Coerce(float), vol.Range(min=0.1, max=10.0))
+        schema_dict[vol.Required(
+            CONF_PELLET_CONSUMPTION_P4_KG_H,
+            default=opts.get(CONF_PELLET_CONSUMPTION_P4_KG_H, DEFAULT_PELLET_CONSUMPTION_P4_KG_H),
+        )] = vol.All(vol.Coerce(float), vol.Range(min=0.1, max=10.0))
+        schema_dict[vol.Required(
+            CONF_PELLET_CONSUMPTION_P5_KG_H,
+            default=opts.get(CONF_PELLET_CONSUMPTION_P5_KG_H, DEFAULT_PELLET_CONSUMPTION_P5_KG_H),
+        )] = vol.All(vol.Coerce(float), vol.Range(min=0.1, max=10.0))
 
         return self.async_show_form(step_id="init", data_schema=vol.Schema(schema_dict))

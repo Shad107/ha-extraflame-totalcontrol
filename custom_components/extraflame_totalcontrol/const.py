@@ -4,7 +4,7 @@ CONF_PASSWORD = "password"
 CONF_POLL_INTERVAL = "poll_interval"
 DEFAULT_POLL_INTERVAL = 30
 
-VERSION = "0.2.5"
+VERSION = "0.2.6"
 
 # Default preset recipes. Each preset is editable via the options flow
 # (Settings → Devices → Extraflame → Configure). "enabled" toggles its
@@ -23,7 +23,7 @@ CONF_PRESETS = "presets"
 # while WORK is active. This integration optionally drives targetPower
 # from the room/setpoint delta so HA emulates the missing continuous
 # modulation. Specialists discourage P1 (incomplete combustion, soot)
-# — the default floor is P2.
+# - the default floor is P2.
 CONF_AUTO_MIN_POWER = "auto_min_power"
 CONF_AUTO_MAX_POWER = "auto_max_power"
 CONF_AUTO_DEADBAND = "auto_deadband"
@@ -33,7 +33,7 @@ DEFAULT_AUTO_DEADBAND = 0.3  # °C, avoids oscillation around thresholds
 
 # Multi-source sensor aggregation. Lets the integration pull temperature
 # and humidity readings from any sensor HA already knows about (Tado TRV
-# heads, Aqara, Z-Wave probes, ESPHome custom — anything with
+# heads, Aqara, Z-Wave probes, ESPHome custom - anything with
 # device_class temperature or humidity). The aggregate becomes the input
 # to the auto-modulation algorithm instead of the stove's lone embedded
 # probe, which sits next to the appliance and is biased upward by
@@ -44,22 +44,46 @@ CONF_AGGREGATION_MODE = "aggregation_mode"
 AGGREGATION_MODES = ("weighted_avg", "min", "max", "stove_only")
 DEFAULT_AGGREGATION_MODE = "weighted_avg"
 
-# Outdoor temperature — single source. Used to compute the
+# Outdoor temperature - single source. Used to compute the
 # indoor/outdoor delta that drives thermal-loss estimates and
 # anticipatory heating logic (v0.3.0+).
 CONF_OUTDOOR_TEMP_SENSOR = "outdoor_temp_sensor"
 
+# Pellet level tracking. The cloud API does not expose a hopper level
+# reading and the Teodora Evo lacks a physical level sensor. We
+# estimate by integrating consumption rate (kg/h, interpolated between
+# P1 and P5 per the manual) over time since the last user-confirmed
+# refill. The user presses button.<stove>_refill_pellet whenever they
+# fill the hopper, which resets the counter to the configured capacity.
+CONF_PELLET_HOPPER_CAPACITY_KG = "pellet_hopper_capacity_kg"
+CONF_PELLET_CONSUMPTION_P1_KG_H = "pellet_conso_p1"
+CONF_PELLET_CONSUMPTION_P2_KG_H = "pellet_conso_p2"
+CONF_PELLET_CONSUMPTION_P3_KG_H = "pellet_conso_p3"
+CONF_PELLET_CONSUMPTION_P4_KG_H = "pellet_conso_p4"
+CONF_PELLET_CONSUMPTION_P5_KG_H = "pellet_conso_p5"
+# Defaults per the Teodora Evo datasheet (0.5 .. 1.8 kg/h end-to-end,
+# linear interpolation in between).
+DEFAULT_PELLET_HOPPER_CAPACITY_KG = 14.0
+DEFAULT_PELLET_CONSUMPTION_P1_KG_H = 0.5
+DEFAULT_PELLET_CONSUMPTION_P2_KG_H = 0.83
+DEFAULT_PELLET_CONSUMPTION_P3_KG_H = 1.15
+DEFAULT_PELLET_CONSUMPTION_P4_KG_H = 1.48
+DEFAULT_PELLET_CONSUMPTION_P5_KG_H = 1.8
+PELLET_LOW_WARNING_PCT = 15.0
+PELLET_CRITICAL_WARNING_PCT = 5.0
+PELLET_STORE_VERSION = 1
+
 # Mapping inspired by the Micronova mainboard state codes commonly seen on
 # Extraflame / La Nordica / MCZ / Ravelli pellet stoves. Verified on a
 # Teodora Evo for the 0 = OFF code; the rest is the standard Micronova
-# sequence — please open an issue with your stove model + observed codes
+# sequence - please open an issue with your stove model + observed codes
 # if your machine reports something different.
 # Labels track the exact phase terminology from the Teodora Evo
 # manual ([PDF, La Nordica-Extraflame, p. WORK/MODULATION section]):
 #   IGNITION    : allumage initial
 #   PREPARATION : stabilisation de la combustion + start ventilation
 #   WORK        : burn at user-set targetPower while delta > 0
-#   MODULATION  : factory-default behaviour when setpoint reached —
+#   MODULATION  : factory-default behaviour when setpoint reached -
 #                 stove keeps burning at MINIMUM power (~P1), not off
 #   STAND BY    : only reached if the user has explicitly enabled the
 #                 Stand By function in the stove menu; full shutdown
@@ -72,7 +96,7 @@ MACHINE_STATE_LABELS: dict[int, str] = {
     2: "Ignition",
     3: "Preparation",
     4: "Préchargement",
-    5: "Modulation",      # burning at minimum, NOT off — see note above
+    5: "Modulation",      # burning at minimum, NOT off - see note above
     6: "Work",            # burning at targetPower
     7: "Nettoyage",
     8: "Cooling",

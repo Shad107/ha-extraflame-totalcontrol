@@ -39,7 +39,7 @@ def _status_label(machine_state: int | None, online: bool) -> str:
     if not online:
         return "OFFLINE"
     if machine_state is None:
-        return "—"
+        return "-"
     s = int(machine_state)
     if s in MACHINE_STATE_OFF:
         return "OFF"
@@ -93,7 +93,7 @@ def render_stove_svg(
 
     def _fmt_temp(v: float | None, unit: str = "°C") -> str:
         if v is None:
-            return "—"
+            return "-"
         return f"{v:.1f}{unit}"
 
     status_label = _status_label(machine_state, online)

@@ -3,7 +3,7 @@
 The cloud accepts arbitrary integer values for ``mainFanSpeed`` via the
 ``settings`` sendCommand topic. The actual range depends on the stove
 model; Teodora Evo runs 0..6 (0 = off, 6 = max). Other models may
-clamp differently — the API never reported an error in tests though,
+clamp differently - the API never reported an error in tests though,
 so the slider stays soft-bounded by HA.
 """
 from __future__ import annotations

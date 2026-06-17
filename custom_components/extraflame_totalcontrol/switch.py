@@ -1,7 +1,7 @@
 """Auto-modulation switch.
 
 The Extraflame stove itself does NOT pick a power level between P1
-and P5 automatically — the user-set ``targetPower`` stays put while
+and P5 automatically - the user-set ``targetPower`` stays put while
 WORK is active. Specialists discourage P1 (incomplete combustion,
 soot, tar) so leaving the stove on P1 24/7 is a bad idea, and so is
 hand-picking P5 when the room is already comfortable.
