@@ -41,7 +41,12 @@ class ExtraflameConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
     def async_get_options_flow(
         config_entry: config_entries.ConfigEntry,
     ) -> "ExtraflameOptionsFlow":
-        return ExtraflameOptionsFlow(config_entry)
+        # In HA 2025.12+ the ConfigEntry is injected on the parent
+        # automatically — instantiating with no args is the supported
+        # pattern. We used to pass the entry to __init__ and assign it
+        # to self.config_entry, but that attribute is now a property
+        # with no setter and that explodes with a 500 in the UI.
+        return ExtraflameOptionsFlow()
 
     async def async_step_user(
         self, user_input: dict[str, Any] | None = None
@@ -87,10 +92,12 @@ FAN_MODE_CHOICES = {0: "Off", 1: "Auto", 2: "Manuel"}
 
 
 class ExtraflameOptionsFlow(config_entries.OptionsFlow):
-    """User-editable presets. One step, one form, all four presets shown."""
+    """User-editable presets. One step, one form, all four presets shown.
 
-    def __init__(self, config_entry: config_entries.ConfigEntry) -> None:
-        self.config_entry = config_entry
+    No custom __init__ — HA's flow framework injects ``self.config_entry``
+    via the parent class. Assigning it ourselves blows up with an
+    ``AttributeError: property has no setter`` on HA 2025.12+.
+    """
 
     def _current(self) -> dict:
         return self.config_entry.options.get(CONF_PRESETS) or DEFAULT_PRESETS
