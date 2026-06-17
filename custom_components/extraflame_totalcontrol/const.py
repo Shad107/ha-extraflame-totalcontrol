@@ -4,7 +4,7 @@ CONF_PASSWORD = "password"
 CONF_POLL_INTERVAL = "poll_interval"
 DEFAULT_POLL_INTERVAL = 30
 
-VERSION = "0.3.1"
+VERSION = "0.3.2"
 
 # Default preset recipes. Each preset is editable via the options flow
 # (Settings → Devices → Extraflame → Configure). "enabled" toggles its
@@ -95,8 +95,9 @@ DEFAULT_HUMIDITY_COMFORT_HIGH_PCT = 65.0
 # constant of that tracking IS the thermal time constant. No stove
 # needed - just patience and enough recorder history.
 THERMAL_STORE_VERSION = 1
-THERMAL_LEARN_DAYS = 14            # history window for the fit
-THERMAL_RESAMPLE_SECONDS = 300     # 5-minute resampling grid
+THERMAL_LEARN_DAYS = 14            # detailed-history fallback window
+THERMAL_LEARN_STATS_DAYS = 365     # long-term-stats preferred window (1 year)
+THERMAL_RESAMPLE_SECONDS = 300     # 5-minute resampling grid (history mode)
 THERMAL_COOLDOWN_AFTER_STOVE_S = 3600  # skip 1h after stove last burned
 THERMAL_MIN_SAMPLES = 50           # below this, fit is meaningless
 

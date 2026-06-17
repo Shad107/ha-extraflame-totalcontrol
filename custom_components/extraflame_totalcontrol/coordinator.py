@@ -64,6 +64,7 @@ from .const import (
     PELLET_STORE_VERSION,
     THERMAL_COOLDOWN_AFTER_STOVE_S,
     THERMAL_LEARN_DAYS,
+    THERMAL_LEARN_STATS_DAYS,
     THERMAL_MIN_SAMPLES,
     THERMAL_RESAMPLE_SECONDS,
     THERMAL_STORE_VERSION,
@@ -656,8 +657,15 @@ class ExtraflameCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             "rmse": st.get("rmse"),
             "last_fit_ts": st.get("last_fit_ts"),
             "history_days": st.get("history_days"),
+            "data_source": st.get("data_source"),
             "delta_range_c": st.get("delta_range_c"),
             "delta_std_c": st.get("delta_std_c"),
+            "method": st.get("method"),
+            "tau_h_phase": st.get("tau_h_phase"),
+            "tau_h_regression": st.get("tau_h_regression"),
+            "outdoor_diurnal_amp_c": st.get("outdoor_diurnal_amp_c"),
+            "indoor_diurnal_amp_c": st.get("indoor_diurnal_amp_c"),
+            "phase_lag_h": st.get("phase_lag_h"),
             "low_confidence": st.get("low_confidence"),
         }
 
@@ -697,43 +705,130 @@ class ExtraflameCoordinator(DataUpdateCoordinator[dict[str, Any]]):
 
         from homeassistant.components.recorder import get_instance
         from homeassistant.components.recorder.history import get_significant_states
+        from homeassistant.components.recorder.statistics import statistics_during_period
 
         recorder = get_instance(self.hass)
         end = dt_util.utcnow()
-        start = end - _timedelta(days=THERMAL_LEARN_DAYS)
-        try:
-            history = await recorder.async_add_executor_job(
-                get_significant_states,
-                self.hass,
-                start,
-                end,
-                [agg_t_eid, outdoor_eid, state_eid],
-                None,  # filters
-                True,  # include_start_time_state
-                False,  # significant_changes_only
-                False,  # minimal_response
-                False,  # no_attributes
-                False,  # compressed_state_format
-            )
-        except Exception as e:  # noqa: BLE001
-            _LOGGER.warning("inertia fit: recorder query failed: %s", e)
-            return {"error": f"recorder_query_failed: {e}"}
 
-        # Coerce history to (ts, value/state) lists
-        def _coerce(eid: str) -> list[tuple[float, str]]:
-            rows = history.get(eid) or []
-            out: list[tuple[float, str]] = []
-            for s in rows:
+        # Prefer long-term statistics: HA keeps hourly means going back
+        # a year+ for sensors with state_class measurement, even after
+        # detailed history has been purged (default Recorder TTL is
+        # 10 days). That's how we get last winter's signal even when
+        # the fit is invoked in June.
+        #
+        # Important: our own aggregate sensor is too young (created on
+        # first install of v0.2.0) to have winter stats. We instead
+        # query the USER'S underlying source sensors (Tado heads,
+        # Netatmo outdoor, etc.) and recompute the aggregate per hour.
+        # Those source sensors have been recording for as long as the
+        # user has had them.
+        stats_start = end - _timedelta(days=THERMAL_LEARN_STATS_DAYS)
+        data_source = "stats_hourly"
+        t_in_raw: list[tuple[float, str]] = []
+        t_out_raw: list[tuple[float, str]] = []
+        state_raw: list[tuple[float, str]] = []
+        source_temps = self._selected_temp_sensors()
+        opts = self.config_entry.options if self.config_entry else {}
+        source_outdoor = opts.get(CONF_OUTDOOR_TEMP_SENSOR)
+        stats_entities = set(source_temps)
+        if source_outdoor:
+            stats_entities.add(source_outdoor)
+
+        if stats_entities:
+            try:
+                stats = await recorder.async_add_executor_job(
+                    statistics_during_period,
+                    self.hass,
+                    stats_start,
+                    end,
+                    stats_entities,
+                    "hour",
+                    None,
+                    {"mean"},
+                )
+            except Exception as e:  # noqa: BLE001
+                _LOGGER.warning("inertia fit: stats query failed, falling back: %s", e)
+                stats = {}
+        else:
+            stats = {}
+
+        def _coerce_stats(rows: list[dict[str, Any]]) -> list[tuple[float, float]]:
+            out: list[tuple[float, float]] = []
+            for r in rows or []:
                 try:
-                    out.append((s.last_updated.timestamp(), s.state))
+                    ts = r["start"].timestamp() if hasattr(r["start"], "timestamp") else float(r["start"])
+                    v = r.get("mean")
+                    if v is None:
+                        continue
+                    fv = float(v)
+                    if fv != fv:
+                        continue
+                    out.append((ts, fv))
                 except Exception:  # noqa: BLE001
                     continue
             return out
 
-        t_in_raw = _coerce(agg_t_eid)
-        t_out_raw = _coerce(outdoor_eid)
-        state_raw = _coerce(state_eid)
-        if not (t_in_raw and t_out_raw and state_raw):
+        if stats:
+            # Build per-hour aggregate indoor temperature by averaging
+            # all source sensors that have a sample for that hour.
+            per_ts: dict[float, list[float]] = {}
+            for eid in source_temps:
+                for ts, v in _coerce_stats(stats.get(eid, [])):
+                    per_ts.setdefault(ts, []).append(v)
+            t_in_raw = [
+                (ts, str(sum(vs) / len(vs)))
+                for ts, vs in sorted(per_ts.items())
+                if vs
+            ]
+            if source_outdoor:
+                t_out_raw = [
+                    (ts, str(v)) for ts, v in _coerce_stats(stats.get(source_outdoor, []))
+                ]
+
+        if len(t_in_raw) < 50 or len(t_out_raw) < 50:
+            # Fall back to the detailed history mode (14 days, 5min).
+            data_source = "history_14d"
+            history_start = end - _timedelta(days=THERMAL_LEARN_DAYS)
+            try:
+                history = await recorder.async_add_executor_job(
+                    get_significant_states,
+                    self.hass,
+                    history_start,
+                    end,
+                    [agg_t_eid, outdoor_eid, state_eid],
+                    None,
+                    True,
+                    False,
+                    False,
+                    False,
+                    False,
+                )
+            except Exception as e:  # noqa: BLE001
+                _LOGGER.warning("inertia fit: recorder history query failed: %s", e)
+                return {"error": f"recorder_query_failed: {e}"}
+
+            def _coerce_hist(eid: str) -> list[tuple[float, str]]:
+                rows = history.get(eid) or []
+                out: list[tuple[float, str]] = []
+                for s in rows:
+                    try:
+                        out.append((s.last_updated.timestamp(), s.state))
+                    except Exception:  # noqa: BLE001
+                        continue
+                return out
+
+            t_in_raw = _coerce_hist(agg_t_eid)
+            t_out_raw = _coerce_hist(outdoor_eid)
+            state_raw = _coerce_hist(state_eid)
+            start = history_start
+        else:
+            # Long-term-stats mode: state history not available at hourly
+            # resolution, so we can't filter burning periods. Acceptable
+            # tradeoff - the diurnal phase fit doesn't really care about
+            # short stove sessions vs. the year-long signal.
+            start = stats_start
+
+        if not (t_in_raw and t_out_raw):
             return {"error": "empty_history"}
 
         # Build a "stove burning" timeline: True between any "Work" /
@@ -783,17 +878,37 @@ class ExtraflameCoordinator(DataUpdateCoordinator[dict[str, Any]]):
                     return p_v + (v - p_v) * f
             return prev[1] if prev else None
 
-        # Resample uniformly
+        # Resample uniformly. Grid step depends on data source: hourly
+        # for the long-term-stats path, 5-min for the detailed history.
+        step = 3600 if data_source == "stats_hourly" else THERMAL_RESAMPLE_SECONDS
         grid: list[tuple[float, float, float]] = []
         cur = start.timestamp()
         end_ts = end.timestamp()
+        # Extra filter on long-term-stats mode: only keep night-time
+        # winter samples. We don't have the stove state at hourly
+        # resolution across a year, and a year-wide RC fit gets
+        # polluted by solar gain (summer days) and stove burning
+        # (winter evenings). Filtering to 02h-06h local time in
+        # Nov..Mar eliminates both confounders: the sun is off, the
+        # stove is typically off, and the indoor is in passive decay
+        # towards the cold outdoor - exactly what the RC model
+        # describes.
+        local_tz = dt_util.DEFAULT_TIME_ZONE
+        from datetime import datetime as _dt
         while cur <= end_ts:
-            if not _is_burning(cur):
+            keep = True
+            if data_source == "stats_hourly":
+                local = _dt.fromtimestamp(cur, tz=local_tz)
+                if not (2 <= local.hour <= 6):
+                    keep = False
+                elif local.month not in (11, 12, 1, 2, 3):
+                    keep = False
+            if keep and not _is_burning(cur):
                 t_in = _interp(t_in_raw, cur)
                 t_out = _interp(t_out_raw, cur)
                 if t_in is not None and t_out is not None:
                     grid.append((cur, t_in, t_out))
-            cur += THERMAL_RESAMPLE_SECONDS
+            cur += step
 
         # Compute (dT/dt, delta) pairs from adjacent grid points
         pairs: list[tuple[float, float]] = []
@@ -801,7 +916,7 @@ class ExtraflameCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             ts_a, tin_a, tout_a = grid[i - 1]
             ts_b, tin_b, _tout_b = grid[i]
             dt = ts_b - ts_a
-            if dt <= 0 or dt > THERMAL_RESAMPLE_SECONDS * 2:
+            if dt <= 0 or dt > step * 2:
                 continue
             dTdt = (tin_b - tin_a) / dt  # deg C / second
             delta = tin_a - tout_a       # at the left edge
@@ -810,51 +925,123 @@ class ExtraflameCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         if len(pairs) < THERMAL_MIN_SAMPLES:
             return {"error": f"not_enough_samples: {len(pairs)} < {THERMAL_MIN_SAMPLES}"}
 
-        # Quality gate. In summer the indoor/outdoor delta is tiny
-        # (both float around 20-25 deg C) and the fit collapses into
-        # noise. We require the delta range to span at least 3 deg C
-        # and the standard deviation to be at least 0.8 deg C - i.e.
-        # there has to be enough thermal "movement" to actually
-        # observe inertia. The user can still ship the value, it's
-        # just flagged low_confidence.
+        # Quality stats on delta (used by both fits + the confidence flag)
         deltas = [d for _dd, d in pairs]
         d_min, d_max = min(deltas), max(deltas)
         d_mean = sum(deltas) / len(deltas)
         d_std = math.sqrt(sum((d - d_mean) ** 2 for d in deltas) / len(deltas))
-        low_confidence = (d_max - d_min) < 3.0 or d_std < 0.8
 
-        # Least-squares regression through the origin: dTdt = -k * delta
-        # Equivalent fit: k = sum(dTdt * delta) / -sum(delta^2)
-        num = sum(d * dd for dd, d in pairs)  # sum(delta * dTdt)
-        den = sum(d * d for _dd, d in pairs)  # sum(delta^2)
-        if den <= 0:
-            return {"error": "degenerate_delta"}
-        slope = num / den  # this is -1/tau (deg C/s per deg C)
-        if slope >= 0:
-            # Inverted physics - means the indoor follows the outdoor
-            # the *wrong* way, usually a sign-flipped outdoor sensor or
-            # mostly-burning-stove history. Refuse the fit.
-            return {"error": f"non-physical_slope: {slope:.6f}"}
-        tau_s = -1.0 / slope
-        tau_h = tau_s / 3600.0
+        # --- method A: phase-shift fit on the 24h diurnal component ---
+        #
+        # First-order RC passing T_out -> T_in attenuates and phase-shifts
+        # the 24h cycle. If T_out(t) = T_out_avg + A*cos(omega*t), then
+        # T_in(t) = T_out_avg + (A / sqrt(1+(omega*tau)^2)) * cos(omega*t - phi)
+        # where tan(phi) = omega*tau.
+        #
+        # Only meaningful on contiguous data covering the whole diurnal
+        # cycle - we skip it in stats_hourly mode because the 02h-06h
+        # winter-night filter throws away most of the cycle.
+        omega = 2.0 * math.pi / 86400.0   # rad/s, 24h period
+        # Use the same uniform grid produced above
+        if data_source != "stats_hourly" and len(grid) >= int(86400 * 2 / step):
+            t0 = grid[0][0]
+            in_centered = [tin - sum(g[1] for g in grid) / len(grid) for _ts, tin, _to in grid]
+            out_centered = [tout - sum(g[2] for g in grid) / len(grid) for _ts, _ti, tout in grid]
+            cos_w = [math.cos(omega * (g[0] - t0)) for g in grid]
+            sin_w = [math.sin(omega * (g[0] - t0)) for g in grid]
+            # DFT projection at the 24h bin
+            in_re = sum(v * c for v, c in zip(in_centered, cos_w))
+            in_im = sum(v * s for v, s in zip(in_centered, sin_w))
+            out_re = sum(v * c for v, c in zip(out_centered, cos_w))
+            out_im = sum(v * s for v, s in zip(out_centered, sin_w))
+            in_amp = math.sqrt(in_re ** 2 + in_im ** 2) / len(grid) * 2.0
+            out_amp = math.sqrt(out_re ** 2 + out_im ** 2) / len(grid) * 2.0
+            # Phase lag: how much the indoor cycle is delayed vs outdoor
+            phi_in = math.atan2(in_im, in_re)
+            phi_out = math.atan2(out_im, out_re)
+            phi_lag = phi_in - phi_out
+            # Normalise into [-pi, pi]
+            while phi_lag > math.pi:
+                phi_lag -= 2 * math.pi
+            while phi_lag < -math.pi:
+                phi_lag += 2 * math.pi
+            phase_low_signal = out_amp < 1.5  # need at least 1.5 deg C diurnal swing
+            phase_non_physical = phi_lag <= 0 or phi_lag >= math.pi / 2
+            if phase_low_signal or phase_non_physical:
+                tau_h_phase: float | None = None
+            else:
+                tau_h_phase = math.tan(phi_lag) / omega / 3600.0
+        else:
+            in_amp = out_amp = phi_lag = 0.0
+            tau_h_phase = None
 
-        # RMSE in deg C/s, for the user to gauge quality
-        rmse_sq = sum((dd - slope * d) ** 2 for dd, d in pairs) / len(pairs)
-        rmse = math.sqrt(rmse_sq)
+        # --- method B: RC regression (the original fit, used as fallback) ---
+        num = sum(d * dd for dd, d in pairs)
+        den = sum(d * d for _dd, d in pairs)
+        slope = num / den if den > 0 else 0.0
+        tau_h_reg: float | None
+        if slope >= 0 or den <= 0:
+            tau_h_reg = None
+        else:
+            tau_h_reg = -1.0 / slope / 3600.0
+        # RMSE for the regression method (in deg C/s)
+        if slope < 0:
+            rmse_sq = sum((dd - slope * d) ** 2 for dd, d in pairs) / len(pairs)
+            rmse = math.sqrt(rmse_sq)
+        else:
+            rmse = None
 
-        # Tau values above 168h (1 week) are not physical for a house -
-        # cap and flag. Real homes have tau in the 5..50h range.
-        if tau_h > 168.0:
-            low_confidence = True
+        # --- pick the winning method ---
+        # Phase wins whenever it produced a physical value, because it
+        # doesn't depend on having a big DC delta between inside and
+        # outside. Regression is the fallback for the rare case where
+        # there's no diurnal cycle at all (sealed cellar, antarctica).
+        if tau_h_phase is not None and 1.0 <= tau_h_phase <= 168.0:
+            tau_h = tau_h_phase
+            method = "phase_24h"
+        elif tau_h_reg is not None and 1.0 <= tau_h_reg <= 168.0:
+            tau_h = tau_h_reg
+            method = "rc_regression"
+        elif tau_h_phase is not None:
+            tau_h = tau_h_phase
+            method = "phase_24h"
+        elif tau_h_reg is not None:
+            tau_h = tau_h_reg
+            method = "rc_regression"
+        else:
+            return {
+                "error": "both_methods_failed",
+                "data_source": data_source,
+                "grid_size": len(grid),
+                "pairs": len(pairs),
+                "delta_range_c": round(d_max - d_min, 2),
+                "delta_std_c": round(d_std, 2),
+                "outdoor_diurnal_amp_c": round(out_amp, 2),
+                "indoor_diurnal_amp_c": round(in_amp, 2),
+                "phase_lag_h": round(phi_lag * 86400 / (2 * math.pi) / 3600, 2),
+                "tau_h_phase": tau_h_phase,
+                "tau_h_regression": tau_h_reg,
+            }
+
+        low_confidence = not (1.0 <= tau_h <= 168.0)
 
         self._thermal_state[stove_id] = {
             "tau_h": round(tau_h, 3),
             "samples": len(pairs),
             "rmse": rmse,
             "last_fit_ts": _time.time(),
-            "history_days": THERMAL_LEARN_DAYS,
+            "history_days": (
+                THERMAL_LEARN_STATS_DAYS if data_source == "stats_hourly" else THERMAL_LEARN_DAYS
+            ),
+            "data_source": data_source,
             "delta_range_c": round(d_max - d_min, 2),
             "delta_std_c": round(d_std, 2),
+            "method": method,
+            "tau_h_phase": round(tau_h_phase, 3) if tau_h_phase is not None else None,
+            "tau_h_regression": round(tau_h_reg, 3) if tau_h_reg is not None else None,
+            "outdoor_diurnal_amp_c": round(out_amp, 2),
+            "indoor_diurnal_amp_c": round(in_amp, 2),
+            "phase_lag_h": round(phi_lag * 86400 / (2 * math.pi) / 3600, 2),
             "low_confidence": low_confidence,
         }
         await self._async_save_thermal_state()

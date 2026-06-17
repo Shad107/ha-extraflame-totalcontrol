@@ -77,5 +77,5 @@ class ExtraflameLearnInertiaButton(
         if meta.get("error"):
             import logging
             logging.getLogger(__name__).warning(
-                "inertia fit for %s failed: %s", self._stove_id, meta["error"]
+                "inertia fit for %s failed: %s", self._stove_id, meta
             )
