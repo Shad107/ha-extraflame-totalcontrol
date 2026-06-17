@@ -807,6 +807,19 @@ class ExtraflameCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         if len(pairs) < THERMAL_MIN_SAMPLES:
             return {"error": f"not_enough_samples: {len(pairs)} < {THERMAL_MIN_SAMPLES}"}
 
+        # Quality gate. In summer the indoor/outdoor delta is tiny
+        # (both float around 20-25 deg C) and the fit collapses into
+        # noise. We require the delta range to span at least 3 deg C
+        # and the standard deviation to be at least 0.8 deg C - i.e.
+        # there has to be enough thermal "movement" to actually
+        # observe inertia. The user can still ship the value, it's
+        # just flagged low_confidence.
+        deltas = [d for _dd, d in pairs]
+        d_min, d_max = min(deltas), max(deltas)
+        d_mean = sum(deltas) / len(deltas)
+        d_std = math.sqrt(sum((d - d_mean) ** 2 for d in deltas) / len(deltas))
+        low_confidence = (d_max - d_min) < 3.0 or d_std < 0.8
+
         # Least-squares regression through the origin: dTdt = -k * delta
         # Equivalent fit: k = sum(dTdt * delta) / -sum(delta^2)
         num = sum(d * dd for dd, d in pairs)  # sum(delta * dTdt)
@@ -826,12 +839,20 @@ class ExtraflameCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         rmse_sq = sum((dd - slope * d) ** 2 for dd, d in pairs) / len(pairs)
         rmse = math.sqrt(rmse_sq)
 
+        # Tau values above 168h (1 week) are not physical for a house -
+        # cap and flag. Real homes have tau in the 5..50h range.
+        if tau_h > 168.0:
+            low_confidence = True
+
         self._thermal_state[stove_id] = {
             "tau_h": round(tau_h, 3),
             "samples": len(pairs),
             "rmse": rmse,
             "last_fit_ts": _time.time(),
             "history_days": THERMAL_LEARN_DAYS,
+            "delta_range_c": round(d_max - d_min, 2),
+            "delta_std_c": round(d_std, 2),
+            "low_confidence": low_confidence,
         }
         await self._async_save_thermal_state()
         self.async_update_listeners()
