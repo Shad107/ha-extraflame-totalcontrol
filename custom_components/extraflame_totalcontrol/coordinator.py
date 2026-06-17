@@ -684,7 +684,28 @@ class ExtraflameCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             "indoor_diurnal_amp_c": st.get("indoor_diurnal_amp_c"),
             "phase_lag_h": st.get("phase_lag_h"),
             "low_confidence": st.get("low_confidence"),
+            "per_room": st.get("per_room") or {},
         }
+
+    def per_room_tau(self, stove_id: str) -> dict[str, dict[str, Any]]:
+        st = self._thermal_state.get(stove_id) or {}
+        return st.get("per_room") or {}
+
+    def best_insulated_room(self, stove_id: str) -> tuple[str | None, float | None]:
+        rooms = self.per_room_tau(stove_id)
+        valid = {e: m["tau_h"] for e, m in rooms.items() if not m.get("low_confidence")}
+        if not valid:
+            return None, None
+        ent = max(valid, key=lambda k: valid[k])
+        return ent, round(valid[ent], 2)
+
+    def worst_insulated_room(self, stove_id: str) -> tuple[str | None, float | None]:
+        rooms = self.per_room_tau(stove_id)
+        valid = {e: m["tau_h"] for e, m in rooms.items() if not m.get("low_confidence")}
+        if not valid:
+            return None, None
+        ent = min(valid, key=lambda k: valid[k])
+        return ent, round(valid[ent], 2)
 
     def _resolve_entity_id(self, unique_id: str) -> str | None:
         try:
@@ -1042,6 +1063,58 @@ class ExtraflameCoordinator(DataUpdateCoordinator[dict[str, Any]]):
 
         low_confidence = not (1.0 <= tau_h <= 168.0)
 
+        # ----- per-room fits (v0.5.1) -----
+        # Same RC regression as above but driven by a single source
+        # temperature sensor instead of the aggregate. The output tells
+        # the user which room insulates well (high tau) and which one
+        # is the leaky weak spot (low tau). Only attempted in
+        # stats_hourly mode - in history mode we don't have enough
+        # rooms-worth of data variety.
+        per_room: dict[str, dict[str, Any]] = {}
+        if data_source == "stats_hourly":
+            for eid in source_temps:
+                room_rows = _coerce_stats(stats.get(eid, []))
+                if len(room_rows) < 50:
+                    continue
+                room_raw = [(ts, str(v)) for ts, v in room_rows]
+                # Resample with the same winter-night filter
+                rgrid: list[tuple[float, float, float]] = []
+                rcur = start.timestamp()
+                while rcur <= end_ts:
+                    local = _dt.fromtimestamp(rcur, tz=local_tz)
+                    if 2 <= local.hour <= 6 and local.month in (11, 12, 1, 2, 3):
+                        t_in = _interp(room_raw, rcur)
+                        t_out = _interp(t_out_raw, rcur)
+                        if t_in is not None and t_out is not None:
+                            rgrid.append((rcur, t_in, t_out))
+                    rcur += step
+                # Build pairs and fit
+                rpairs: list[tuple[float, float]] = []
+                for i in range(1, len(rgrid)):
+                    ts_a, tin_a, tout_a = rgrid[i - 1]
+                    ts_b, tin_b, _ = rgrid[i]
+                    rdt = ts_b - ts_a
+                    if rdt <= 0 or rdt > step * 2:
+                        continue
+                    rpairs.append(((tin_b - tin_a) / rdt, tin_a - tout_a))
+                if len(rpairs) < THERMAL_MIN_SAMPLES:
+                    continue
+                rnum = sum(d * dd for dd, d in rpairs)
+                rden = sum(d * d for _dd, d in rpairs)
+                if rden <= 0:
+                    continue
+                rslope = rnum / rden
+                if rslope >= 0:
+                    continue
+                rtau_h = -1.0 / rslope / 3600.0
+                rdeltas = [d for _dd, d in rpairs]
+                per_room[eid] = {
+                    "tau_h": round(rtau_h, 2),
+                    "samples": len(rpairs),
+                    "delta_range_c": round(max(rdeltas) - min(rdeltas), 2),
+                    "low_confidence": not (1.0 <= rtau_h <= 168.0),
+                }
+
         self._thermal_state[stove_id] = {
             "tau_h": round(tau_h, 3),
             "samples": len(pairs),
@@ -1060,10 +1133,11 @@ class ExtraflameCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             "indoor_diurnal_amp_c": round(in_amp, 2),
             "phase_lag_h": round(phi_lag * 86400 / (2 * math.pi) / 3600, 2),
             "low_confidence": low_confidence,
+            "per_room": per_room,
         }
         await self._async_save_thermal_state()
         self.async_update_listeners()
-        return self.thermal_fit_meta(stove_id) | {"tau_h": tau_h}
+        return self.thermal_fit_meta(stove_id) | {"tau_h": tau_h, "per_room": per_room}
 
     # ----- thermal prediction (v0.4.0) -----
     #

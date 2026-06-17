@@ -4,7 +4,7 @@ CONF_PASSWORD = "password"
 CONF_POLL_INTERVAL = "poll_interval"
 DEFAULT_POLL_INTERVAL = 30
 
-VERSION = "0.5.0"
+VERSION = "0.5.1"
 
 # Default preset recipes. Each preset is editable via the options flow
 # (Settings → Devices → Extraflame → Configure). "enabled" toggles its

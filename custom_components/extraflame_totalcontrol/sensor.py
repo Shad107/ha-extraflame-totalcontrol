@@ -75,6 +75,8 @@ async def async_setup_entry(
         entities.append(ExtraflameForecastMinTempSensor(coordinator, stove_id))
         entities.append(ExtraflameColdSnapInHoursSensor(coordinator, stove_id))
         entities.append(ExtraflameRecommendedPreheatAtSensor(coordinator, stove_id))
+        entities.append(ExtraflameBestInsulatedRoomSensor(coordinator, stove_id))
+        entities.append(ExtraflameWorstInsulatedRoomSensor(coordinator, stove_id))
     async_add_entities(entities)
 
 
@@ -919,5 +921,78 @@ class ExtraflameRecommendedPreheatAtSensor(
             return None
         from datetime import datetime, timezone
         return datetime.fromtimestamp(ts, tz=timezone.utc)
+
+
+class ExtraflameBestInsulatedRoomSensor(
+    CoordinatorEntity[ExtraflameCoordinator], SensorEntity
+):
+    """The room with the longest tau - the one that holds heat best.
+
+    State is the tau (hours), ``entity_id`` attribute names the room.
+    The full per-room ranking is in ``rooms``. Only populated after
+    a successful Learn inertia run with enough winter-night data.
+    """
+
+    _attr_has_entity_name = True
+    _attr_name = "Best insulated room"
+    _attr_icon = "mdi:home-thermometer-outline"
+    _attr_native_unit_of_measurement = "h"
+    _attr_state_class = SensorStateClass.MEASUREMENT
+    _attr_suggested_display_precision = 2
+
+    def __init__(self, coordinator: ExtraflameCoordinator, stove_id: str) -> None:
+        super().__init__(coordinator)
+        self._stove_id = stove_id
+        self._attr_unique_id = f"extraflame_{stove_id}_best_insulated_room"
+        stove = coordinator.data["stoves"][stove_id]["stove"]
+        self._attr_device_info = stove_device_info(stove)
+
+    @property
+    def native_value(self) -> float | None:
+        _ent, tau = self.coordinator.best_insulated_room(self._stove_id)
+        return tau
+
+    @property
+    def extra_state_attributes(self) -> dict:
+        ent, _tau = self.coordinator.best_insulated_room(self._stove_id)
+        return {
+            "entity_id": ent,
+            "rooms": self.coordinator.per_room_tau(self._stove_id),
+        }
+
+
+class ExtraflameWorstInsulatedRoomSensor(
+    CoordinatorEntity[ExtraflameCoordinator], SensorEntity
+):
+    """The room with the shortest tau - the leaky weak spot.
+
+    Watch this over the heating season to plan insulation upgrades:
+    the lowest-tau room is the highest-impact target for double-
+    glazing, draft sealing, or a thicker carpet over a cold floor.
+    """
+
+    _attr_has_entity_name = True
+    _attr_name = "Worst insulated room"
+    _attr_icon = "mdi:home-alert"
+    _attr_native_unit_of_measurement = "h"
+    _attr_state_class = SensorStateClass.MEASUREMENT
+    _attr_suggested_display_precision = 2
+
+    def __init__(self, coordinator: ExtraflameCoordinator, stove_id: str) -> None:
+        super().__init__(coordinator)
+        self._stove_id = stove_id
+        self._attr_unique_id = f"extraflame_{stove_id}_worst_insulated_room"
+        stove = coordinator.data["stoves"][stove_id]["stove"]
+        self._attr_device_info = stove_device_info(stove)
+
+    @property
+    def native_value(self) -> float | None:
+        _ent, tau = self.coordinator.worst_insulated_room(self._stove_id)
+        return tau
+
+    @property
+    def extra_state_attributes(self) -> dict:
+        ent, _tau = self.coordinator.worst_insulated_room(self._stove_id)
+        return {"entity_id": ent}
 
 
