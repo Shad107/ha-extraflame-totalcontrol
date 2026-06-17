@@ -16,10 +16,12 @@ from .const import (
     CONF_AUTO_DEADBAND,
     CONF_AUTO_MAX_POWER,
     CONF_AUTO_MIN_POWER,
+    CONF_HOME_HEAT_CAPACITY_MJ_PER_K,
     CONF_HUMIDITY_COMFORT_HIGH_PCT,
     CONF_HUMIDITY_COMFORT_LOW_PCT,
     CONF_HUMIDITY_SENSORS,
     CONF_OUTDOOR_TEMP_SENSOR,
+    CONF_PELLET_PCI_KWH_KG,
     CONF_PASSWORD,
     CONF_PELLET_CONSUMPTION_P1_KG_H,
     CONF_PELLET_CONSUMPTION_P2_KG_H,
@@ -35,9 +37,11 @@ from .const import (
     DEFAULT_AUTO_DEADBAND,
     DEFAULT_AUTO_MAX_POWER,
     DEFAULT_AUTO_MIN_POWER,
+    DEFAULT_HOME_HEAT_CAPACITY_MJ_PER_K,
     DEFAULT_HUMIDITY_COMFORT_HIGH_PCT,
     DEFAULT_HUMIDITY_COMFORT_LOW_PCT,
     DEFAULT_PELLET_CONSUMPTION_P1_KG_H,
+    DEFAULT_PELLET_PCI_KWH_KG,
     DEFAULT_PELLET_CONSUMPTION_P2_KG_H,
     DEFAULT_PELLET_CONSUMPTION_P3_KG_H,
     DEFAULT_PELLET_CONSUMPTION_P4_KG_H,
@@ -168,6 +172,12 @@ class ExtraflameOptionsFlow(config_entries.OptionsFlow):
                     CONF_HUMIDITY_COMFORT_HIGH_PCT: float(
                         user_input.get(CONF_HUMIDITY_COMFORT_HIGH_PCT, DEFAULT_HUMIDITY_COMFORT_HIGH_PCT)
                     ),
+                    CONF_PELLET_PCI_KWH_KG: float(
+                        user_input.get(CONF_PELLET_PCI_KWH_KG, DEFAULT_PELLET_PCI_KWH_KG)
+                    ),
+                    CONF_HOME_HEAT_CAPACITY_MJ_PER_K: float(
+                        user_input.get(CONF_HOME_HEAT_CAPACITY_MJ_PER_K, DEFAULT_HOME_HEAT_CAPACITY_MJ_PER_K)
+                    ),
                 },
             )
 
@@ -286,5 +296,15 @@ class ExtraflameOptionsFlow(config_entries.OptionsFlow):
             CONF_HUMIDITY_COMFORT_HIGH_PCT,
             default=opts.get(CONF_HUMIDITY_COMFORT_HIGH_PCT, DEFAULT_HUMIDITY_COMFORT_HIGH_PCT),
         )] = vol.All(vol.Coerce(float), vol.Range(min=40.0, max=90.0))
+
+        # ----- v0.4.0 thermal prediction parameters -----
+        schema_dict[vol.Required(
+            CONF_PELLET_PCI_KWH_KG,
+            default=opts.get(CONF_PELLET_PCI_KWH_KG, DEFAULT_PELLET_PCI_KWH_KG),
+        )] = vol.All(vol.Coerce(float), vol.Range(min=3.0, max=6.0))
+        schema_dict[vol.Required(
+            CONF_HOME_HEAT_CAPACITY_MJ_PER_K,
+            default=opts.get(CONF_HOME_HEAT_CAPACITY_MJ_PER_K, DEFAULT_HOME_HEAT_CAPACITY_MJ_PER_K),
+        )] = vol.All(vol.Coerce(float), vol.Range(min=0.5, max=50.0))
 
         return self.async_show_form(step_id="init", data_schema=vol.Schema(schema_dict))

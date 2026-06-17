@@ -64,7 +64,9 @@
           "pellet_conso_p4": "Consommation pellets à P4 (kg/h)",
           "pellet_conso_p5": "Consommation pellets à P5 (kg/h)",
           "humidity_comfort_low_pct": "Humidité confort - mini (%)",
-          "humidity_comfort_high_pct": "Humidité confort - maxi (%)"
+          "humidity_comfort_high_pct": "Humidité confort - maxi (%)",
+          "pellet_pci_kwh_kg": "PCI des pellets (kWh/kg)",
+          "home_heat_capacity_mj_per_k": "Capacité thermique maison (MJ/K)"
         },
         "data_description": {
           "eco_power": "1 = P1 (minimum) à 5 = P5 (max).",
@@ -97,7 +99,9 @@
           "pellet_conso_p4": "Débit à P4 (kg/h). Défaut 1.48 kg/h.",
           "pellet_conso_p5": "Débit à P5 (kg/h). Défaut 1.8 kg/h, le maximum constructeur.",
           "humidity_comfort_low_pct": "Borne basse de la zone de confort en humidité relative. En dessous, la pièce déclenche l'alerte humidité côté trop sec. 30 % correspond à la recommandation ASHRAE hiver ; monter si vous avez des meubles en bois ou la peau sensible.",
-          "humidity_comfort_high_pct": "Borne haute de la zone de confort. Au-dessus, la pièce déclenche l'alerte côté trop humide. 65 % laisse une petite marge avant le risque de moisissure sur les murs froids ; descendre pour les maisons anciennes."
+          "humidity_comfort_high_pct": "Borne haute de la zone de confort. Au-dessus, la pièce déclenche l'alerte côté trop humide. 65 % laisse une petite marge avant le risque de moisissure sur les murs froids ; descendre pour les maisons anciennes.",
+          "pellet_pci_kwh_kg": "Pouvoir calorifique inférieur (PCI) des pellets que tu brûles réellement. Les pellets bois sont entre 4.6 et 5.0 kWh/kg selon la norme EN 14961-2 ; défaut 4.8. Baisser pour pellets bas de gamme ou combustion incomplète.",
+          "home_heat_capacity_mj_per_k": "Masse thermique du volume chauffé. Règle approchée : 0.05 MJ/K par m2 habitable (donc 5 MJ/K pour 100 m2 plain-pied). Murs béton + carrelage augmentent, maison ossature bois diminue. Utilisé par la prédiction équilibre + temps de chauffe."
         }
       }
     }

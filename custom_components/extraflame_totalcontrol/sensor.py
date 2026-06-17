@@ -69,6 +69,9 @@ async def async_setup_entry(
         entities.append(ExtraflameApparentRoomTempSensor(coordinator, stove_id))
         entities.append(ExtraflameRoomDewPointSensor(coordinator, stove_id))
         entities.append(ExtraflameThermalTauSensor(coordinator, stove_id))
+        entities.append(ExtraflameHeatingPowerSensor(coordinator, stove_id))
+        entities.append(ExtraflameSteadyStateTempSensor(coordinator, stove_id))
+        entities.append(ExtraflameTimeToSetpointSensor(coordinator, stove_id))
     async_add_entities(entities)
 
 
@@ -727,5 +730,100 @@ class ExtraflameThermalTauSensor(
     @property
     def extra_state_attributes(self) -> dict:
         return self.coordinator.thermal_fit_meta(self._stove_id)
+
+
+class ExtraflameHeatingPowerSensor(
+    CoordinatorEntity[ExtraflameCoordinator], SensorEntity
+):
+    """Instantaneous thermal output of the stove in kW.
+
+    Q = (kg/h burned at current power) * pellet PCI (kWh/kg). Drops
+    to 0 in OFF / cooling / STAND BY, since the stove isn't producing
+    heat then. The pellet PCI defaults to 4.8 kWh/kg (typical wood
+    pellet) and is tunable in the Configure page.
+    """
+
+    _attr_has_entity_name = True
+    _attr_name = "Heating power"
+    _attr_icon = "mdi:fire-circle"
+    _attr_device_class = SensorDeviceClass.POWER
+    _attr_native_unit_of_measurement = "kW"
+    _attr_state_class = SensorStateClass.MEASUREMENT
+    _attr_suggested_display_precision = 2
+
+    def __init__(self, coordinator: ExtraflameCoordinator, stove_id: str) -> None:
+        super().__init__(coordinator)
+        self._stove_id = stove_id
+        self._attr_unique_id = f"extraflame_{stove_id}_heating_power_kw"
+        stove = coordinator.data["stoves"][stove_id]["stove"]
+        self._attr_device_info = stove_device_info(stove)
+
+    @property
+    def native_value(self) -> float | None:
+        return self.coordinator.heating_power_kw(self._stove_id)
+
+
+class ExtraflameSteadyStateTempSensor(
+    CoordinatorEntity[ExtraflameCoordinator], SensorEntity
+):
+    """Equilibrium room temperature at the current power level.
+
+    T_eq = T_outdoor + Q*tau/C. Where the room would settle if the
+    stove kept burning at the current power forever. A pragmatic
+    sanity check on power choice: if T_eq is below the setpoint, no
+    amount of time will reach the target with this power level - the
+    user needs to bump the stove higher.
+    """
+
+    _attr_has_entity_name = True
+    _attr_name = "Steady-state temperature"
+    _attr_icon = "mdi:thermometer-check"
+    _attr_device_class = SensorDeviceClass.TEMPERATURE
+    _attr_native_unit_of_measurement = UnitOfTemperature.CELSIUS
+    _attr_state_class = SensorStateClass.MEASUREMENT
+    _attr_suggested_display_precision = 1
+
+    def __init__(self, coordinator: ExtraflameCoordinator, stove_id: str) -> None:
+        super().__init__(coordinator)
+        self._stove_id = stove_id
+        self._attr_unique_id = f"extraflame_{stove_id}_steady_state_temperature"
+        stove = coordinator.data["stoves"][stove_id]["stove"]
+        self._attr_device_info = stove_device_info(stove)
+
+    @property
+    def native_value(self) -> float | None:
+        return self.coordinator.steady_state_temperature(self._stove_id)
+
+
+class ExtraflameTimeToSetpointSensor(
+    CoordinatorEntity[ExtraflameCoordinator], SensorEntity
+):
+    """Predicted minutes for the room to reach the stove's targetRoomTemp.
+
+    Uses the exponential ramp T(t) = T_eq + (T0 - T_eq) * exp(-t/tau).
+    Returns 0 when the room is already at or above the setpoint, and
+    is ``unknown`` when the chosen power level can't physically reach
+    the setpoint (T_eq < T_target) - dashboards should render that as
+    "out of reach, raise the power".
+    """
+
+    _attr_has_entity_name = True
+    _attr_name = "Time to setpoint"
+    _attr_icon = "mdi:timer-cog"
+    _attr_native_unit_of_measurement = "min"
+    _attr_device_class = SensorDeviceClass.DURATION
+    _attr_state_class = SensorStateClass.MEASUREMENT
+    _attr_suggested_display_precision = 0
+
+    def __init__(self, coordinator: ExtraflameCoordinator, stove_id: str) -> None:
+        super().__init__(coordinator)
+        self._stove_id = stove_id
+        self._attr_unique_id = f"extraflame_{stove_id}_time_to_setpoint_min"
+        stove = coordinator.data["stoves"][stove_id]["stove"]
+        self._attr_device_info = stove_device_info(stove)
+
+    @property
+    def native_value(self) -> float | None:
+        return self.coordinator.time_to_setpoint_minutes(self._stove_id)
 
 

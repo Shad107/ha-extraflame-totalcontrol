@@ -50,10 +50,14 @@ from .const import (
     DEFAULT_AGGREGATION_MODE,
     DEFAULT_AUTO_DEADBAND,
     DEFAULT_AUTO_MAX_POWER,
+    CONF_HOME_HEAT_CAPACITY_MJ_PER_K,
+    CONF_PELLET_PCI_KWH_KG,
     DEFAULT_AUTO_MIN_POWER,
+    DEFAULT_HOME_HEAT_CAPACITY_MJ_PER_K,
     DEFAULT_HUMIDITY_COMFORT_HIGH_PCT,
     DEFAULT_HUMIDITY_COMFORT_LOW_PCT,
     DEFAULT_PELLET_CONSUMPTION_P1_KG_H,
+    DEFAULT_PELLET_PCI_KWH_KG,
     DEFAULT_PELLET_CONSUMPTION_P2_KG_H,
     DEFAULT_PELLET_CONSUMPTION_P3_KG_H,
     DEFAULT_PELLET_CONSUMPTION_P4_KG_H,
@@ -1047,6 +1051,109 @@ class ExtraflameCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         await self._async_save_thermal_state()
         self.async_update_listeners()
         return self.thermal_fit_meta(stove_id) | {"tau_h": tau_h}
+
+    # ----- thermal prediction (v0.4.0) -----
+    #
+    # Combines the learned tau with the stove's live heat output to
+    # project two useful quantities:
+    #   - steady_state_temperature : where the room would settle if the
+    #     current power were maintained forever
+    #   - time_to_setpoint : exponential ramp from the live room temp
+    #     up to targetRoomTemp at the current power level
+    # Both assume a single-zone first-order RC model, which is what we
+    # fit. The accuracy is bounded by tau's confidence (still low in
+    # summer); the numbers grow trustworthy as the user re-presses
+    # Learn inertia through autumn/winter.
+
+    def _pci_kwh_kg(self) -> float:
+        opts = self.config_entry.options if self.config_entry else {}
+        try:
+            return float(opts.get(CONF_PELLET_PCI_KWH_KG, DEFAULT_PELLET_PCI_KWH_KG))
+        except (TypeError, ValueError):
+            return DEFAULT_PELLET_PCI_KWH_KG
+
+    def _home_heat_capacity_j_per_k(self) -> float:
+        opts = self.config_entry.options if self.config_entry else {}
+        try:
+            mj = float(opts.get(CONF_HOME_HEAT_CAPACITY_MJ_PER_K, DEFAULT_HOME_HEAT_CAPACITY_MJ_PER_K))
+        except (TypeError, ValueError):
+            mj = DEFAULT_HOME_HEAT_CAPACITY_MJ_PER_K
+        return mj * 1_000_000.0
+
+    def heating_power_kw(self, stove_id: str) -> float | None:
+        """Instantaneous thermal output of the stove in kW.
+
+        Q = (kg/h burned at current power) * PCI (kWh/kg). Returns 0
+        when the stove isn't burning (OFF / cooling / STAND BY) and
+        None when we can't read the state.
+        """
+        snap = (self.data or {}).get("stoves", {}).get(stove_id, {})
+        params = snap.get("parameters") or {}
+        if not params:
+            return None
+        power = self._instant_power_from_params(params)
+        if power <= 0:
+            return 0.0
+        rate = self.pellet_consumption_rate_kg_h(power)
+        return round(rate * self._pci_kwh_kg(), 2)
+
+    def steady_state_temperature(self, stove_id: str) -> float | None:
+        """T_eq = T_out + Q * tau / C.
+
+        Where the room would settle if the stove kept burning at the
+        current power level forever. Useful as a sanity check on the
+        user's chosen power: if T_eq is below the setpoint, no amount
+        of time will reach the target with this power.
+        """
+        tau_h = self.thermal_tau_h(stove_id)
+        q_kw = self.heating_power_kw(stove_id)
+        t_out = self.outdoor_temperature()
+        if tau_h is None or q_kw is None or t_out is None:
+            return None
+        if q_kw <= 0:
+            return round(t_out, 1)  # stove off -> room drifts toward outdoor
+        c_j_per_k = self._home_heat_capacity_j_per_k()
+        if c_j_per_k <= 0:
+            return None
+        tau_s = tau_h * 3600.0
+        q_w = q_kw * 1000.0
+        delta_eq = q_w * tau_s / c_j_per_k
+        return round(t_out + delta_eq, 1)
+
+    def time_to_setpoint_minutes(self, stove_id: str) -> float | None:
+        """t = tau * ln((T0 - T_eq) / (T_target - T_eq)).
+
+        Returns 0 if the room is already at or above setpoint. Returns
+        None if the stove can't reach the setpoint at the current
+        power (T_eq < T_target) so dashboards can render "infinity".
+        """
+        tau_h = self.thermal_tau_h(stove_id)
+        if tau_h is None or tau_h <= 0:
+            return None
+        t_current, _ = self.aggregate_room_temperature(stove_id)
+        t_eq = self.steady_state_temperature(stove_id)
+        snap = (self.data or {}).get("stoves", {}).get(stove_id, {})
+        params = snap.get("parameters") or {}
+        tr = params.get("targetRoomTemp")
+        if t_current is None or t_eq is None or tr is None or tr.value is None:
+            return None
+        try:
+            t_target = float(tr.value)
+        except (TypeError, ValueError):
+            return None
+        if t_target <= t_current:
+            return 0.0
+        # Need T_eq strictly above T_target to reach it.
+        if t_eq <= t_target + 0.1:
+            return None
+        try:
+            ratio = (t_current - t_eq) / (t_target - t_eq)
+            if ratio <= 0:
+                return None
+            t_h = tau_h * math.log(ratio)
+            return round(t_h * 60.0, 1)
+        except (ValueError, ZeroDivisionError):
+            return None
 
     async def async_close(self) -> None:
         await self._client.close()

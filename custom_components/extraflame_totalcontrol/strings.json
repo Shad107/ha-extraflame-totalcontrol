@@ -64,7 +64,9 @@
           "pellet_conso_p4": "Pellet consumption at P4 (kg/h)",
           "pellet_conso_p5": "Pellet consumption at P5 (kg/h)",
           "humidity_comfort_low_pct": "Humidity comfort low (%)",
-          "humidity_comfort_high_pct": "Humidity comfort high (%)"
+          "humidity_comfort_high_pct": "Humidity comfort high (%)",
+          "pellet_pci_kwh_kg": "Pellet calorific value (kWh/kg)",
+          "home_heat_capacity_mj_per_k": "Home heat capacity (MJ/K)"
         },
         "data_description": {
           "eco_power": "1=P1 to 5=P5. P1 is the minimum burn level.",
@@ -97,7 +99,9 @@
           "pellet_conso_p4": "Pellet burn rate at P4 (kg/h). Default 1.48 kg/h.",
           "pellet_conso_p5": "Pellet burn rate at P5 (kg/h). Default 1.8 kg/h, the manufacturer maximum.",
           "humidity_comfort_low_pct": "Lower bound of the comfort RH range. Rooms below this trigger the humidity alert as too dry. 30% matches ASHRAE winter guidance; raise it if you have wood furniture or sensitive skin.",
-          "humidity_comfort_high_pct": "Upper bound of the comfort RH range. Rooms above this trigger the humidity alert as too damp. 65% leaves a small margin before mould risk on cold walls; lower for older homes."
+          "humidity_comfort_high_pct": "Upper bound of the comfort RH range. Rooms above this trigger the humidity alert as too damp. 65% leaves a small margin before mould risk on cold walls; lower for older homes.",
+          "pellet_pci_kwh_kg": "Net calorific value of the pellets you actually burn. Wood pellets ship at 4.6 to 5.0 kWh/kg per the EN 14961-2 spec, default 4.8. Lower for low-grade pellets or if combustion is incomplete.",
+          "home_heat_capacity_mj_per_k": "Thermal mass of the heated volume. Rough rule: 0.05 MJ/K per habitable m2 (so 5 MJ/K for a 100 m2 single-storey home). Concrete walls + tile floors push this up, wood-frame homes push it down. Used by the steady-state and time-to-setpoint predictions."
         }
       }
     }
