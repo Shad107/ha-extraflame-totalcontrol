@@ -21,7 +21,11 @@ from .api_client import (
 from .models import resolve_model
 
 from homeassistant.helpers.storage import Store
+from homeassistant.helpers import entity_registry as er
+from homeassistant.util import dt as dt_util
+import math
 import time as _time
+from datetime import timedelta as _timedelta
 
 from .const import (
     AGGREGATION_MODES,
@@ -58,6 +62,11 @@ from .const import (
     DEFAULT_POLL_INTERVAL,
     DOMAIN,
     PELLET_STORE_VERSION,
+    THERMAL_COOLDOWN_AFTER_STOVE_S,
+    THERMAL_LEARN_DAYS,
+    THERMAL_MIN_SAMPLES,
+    THERMAL_RESAMPLE_SECONDS,
+    THERMAL_STORE_VERSION,
 )
 
 _LOGGER = logging.getLogger(__name__)
@@ -88,11 +97,21 @@ class ExtraflameCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             hass, PELLET_STORE_VERSION, f"{DOMAIN}_pellet_{entry.entry_id}"
         )
         self._pellet_loaded: bool = False
+        # Thermal RC model fit (per-stove tau in hours + meta).
+        # Structure: {stove_id: {"tau_h": float, "samples": int,
+        #                        "last_fit_ts": float, "rmse": float}}
+        self._thermal_state: dict[str, dict[str, Any]] = {}
+        self._thermal_store: Store = Store(
+            hass, THERMAL_STORE_VERSION, f"{DOMAIN}_thermal_{entry.entry_id}"
+        )
+        self._thermal_loaded: bool = False
 
     async def _async_update_data(self) -> dict[str, Any]:
         try:
             if not self._pellet_loaded:
                 await self._async_load_pellet_state()
+            if not self._thermal_loaded:
+                await self._async_load_thermal_state()
             stoves = await self._client.list_stoves()
             snapshot: dict[str, Any] = {"stoves": {}}
             for s in stoves:
@@ -505,6 +524,318 @@ class ExtraflameCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         }
         await self._async_save_pellet_state()
         self.async_update_listeners()
+
+    # ----- humidity-corrected comfort (v0.3.0) -----
+    #
+    # The aggregate room temperature tells you the air temperature; on
+    # its own it lies about how the room *feels*. Two cases where the
+    # user reports "il fait froid" but the thermometer says 20 deg C:
+    #
+    # 1. Low RH (winter pellet stove drying the salon): below ~30% RH
+    #    skin evaporation accelerates -> the body cools faster than the
+    #    air should warrant. Feels 1-2 deg colder.
+    #
+    # 2. High RH + cold walls (old French homes, "froid humide"): the
+    #    air is at 20 deg C but the radiant temperature of the walls is
+    #    much lower. Operative temperature drops accordingly. The dew
+    #    point is the right proxy here - when dew point is close to the
+    #    wall temperature, water condenses, the walls get cold and damp.
+    #
+    # We don't measure wall temperature, so we expose:
+    # - apparent room temperature: Steadman-style formula folding RH
+    #   into the air temperature (captures case 1 and the wet-skin side
+    #   of case 2)
+    # - room dew point: the "humid cold" early warning that walls below
+    #   this temperature will start to condense
+
+    @staticmethod
+    def _saturation_vapor_pressure_hpa(t_c: float) -> float:
+        """Magnus formula. Returns saturation pressure in hPa (mbar)."""
+        return 6.105 * math.exp(17.27 * t_c / (237.7 + t_c))
+
+    @staticmethod
+    def _apparent_temp_c(t_c: float, rh_pct: float) -> float:
+        """Australian BOM apparent temperature, no-wind indoor variant.
+
+        AT = T + 0.33 * e - 4
+        where e = (RH/100) * saturation pressure(T)
+
+        Dry air at 20 deg C, RH=20% -> AT ~ 17.5 deg C (feels cold)
+        Humid air at 20 deg C, RH=80% -> AT ~ 22 deg C (feels warm)
+        Cold + damp at 16 deg C, RH=80% -> AT ~ 16.8 deg C (close to
+            air; the brutal "froid humide" sensation comes from the
+            cold walls, captured separately by dew_point > wall_temp)
+        """
+        e = (rh_pct / 100.0) * ExtraflameCoordinator._saturation_vapor_pressure_hpa(t_c)
+        return t_c + 0.33 * e - 4.0
+
+    @staticmethod
+    def _dew_point_c(t_c: float, rh_pct: float) -> float:
+        """Magnus formula inversion. Dew point in deg C."""
+        a, b = 17.27, 237.7
+        rh = max(1.0, min(100.0, rh_pct))
+        alpha = a * t_c / (b + t_c) + math.log(rh / 100.0)
+        return b * alpha / (a - alpha)
+
+    def apparent_room_temperature(self, stove_id: str) -> float | None:
+        t, _ = self.aggregate_room_temperature(stove_id)
+        rh, _ = self.aggregate_room_humidity(stove_id)
+        if t is None or rh is None:
+            return None
+        return round(self._apparent_temp_c(t, rh), 1)
+
+    def room_dew_point(self, stove_id: str) -> tuple[float | None, dict[str, float | None]]:
+        """Dew point of the aggregate, plus a per-room breakdown.
+
+        Per-room dew points need both a temperature and humidity sensor
+        for the same room. We pair by stripping the trailing
+        '_temperature' / '_humidite' suffix and matching the rest of
+        the entity_id (Tado pattern: thermostat_salon_temperature +
+        thermostat_salon_humidite). Anything that can't be paired is
+        omitted from the breakdown but still folded into the aggregate.
+        """
+        t_agg, _ = self.aggregate_room_temperature(stove_id)
+        rh_agg, _ = self.aggregate_room_humidity(stove_id)
+        agg = round(self._dew_point_c(t_agg, rh_agg), 1) if (t_agg is not None and rh_agg is not None) else None
+
+        breakdown: dict[str, float | None] = {}
+        temps: dict[str, float] = {}
+        for ent in self._selected_temp_sensors():
+            v = self._read_state_value(ent)
+            if v is not None:
+                temps[ent] = v
+        for ent in self._selected_humidity_sensors():
+            rh = self._read_state_value(ent)
+            if rh is None:
+                continue
+            # Try to find a matching temperature sensor by stripping
+            # the humidity suffix and looking for a temperature variant.
+            matched_t = None
+            for suffix in ("_humidite", "_humidity", "_humidity_pct"):
+                if ent.endswith(suffix):
+                    stem = ent[: -len(suffix)]
+                    for t_ent, t_v in temps.items():
+                        if t_ent.startswith(stem):
+                            matched_t = t_v
+                            break
+                    if matched_t is not None:
+                        break
+            if matched_t is None:
+                continue
+            breakdown[ent] = round(self._dew_point_c(matched_t, rh), 1)
+        return agg, breakdown
+
+    # ----- passive RC inertia learner (v0.3.0) -----
+
+    async def _async_load_thermal_state(self) -> None:
+        data = await self._thermal_store.async_load() or {}
+        stoves = data.get("stoves") or {}
+        if isinstance(stoves, dict):
+            for sid, st in stoves.items():
+                if isinstance(st, dict):
+                    self._thermal_state[sid] = dict(st)
+        self._thermal_loaded = True
+
+    async def _async_save_thermal_state(self) -> None:
+        await self._thermal_store.async_save({"stoves": self._thermal_state})
+
+    def thermal_tau_h(self, stove_id: str) -> float | None:
+        st = self._thermal_state.get(stove_id)
+        if not st:
+            return None
+        v = st.get("tau_h")
+        try:
+            return round(float(v), 2) if v is not None else None
+        except (TypeError, ValueError):
+            return None
+
+    def thermal_fit_meta(self, stove_id: str) -> dict[str, Any]:
+        st = self._thermal_state.get(stove_id) or {}
+        return {
+            "samples": st.get("samples"),
+            "rmse": st.get("rmse"),
+            "last_fit_ts": st.get("last_fit_ts"),
+            "history_days": st.get("history_days"),
+        }
+
+    def _resolve_entity_id(self, unique_id: str) -> str | None:
+        try:
+            ent_reg = er.async_get(self.hass)
+            return ent_reg.async_get_entity_id("sensor", DOMAIN, unique_id)
+        except Exception:  # noqa: BLE001
+            return None
+
+    async def async_learn_inertia(self, stove_id: str) -> dict[str, Any]:
+        """Fit a first-order RC model from HA Recorder history.
+
+        Strategy:
+          1. Pull last THERMAL_LEARN_DAYS of indoor aggregate temp,
+             outdoor temp, and the stove machine_state label.
+          2. Drop any samples while the stove was running OR within
+             THERMAL_COOLDOWN_AFTER_STOVE_S afterward.
+          3. Resample to a uniform THERMAL_RESAMPLE_SECONDS grid.
+          4. Compute dT/dt by finite difference and fit
+             dT/dt = -(T_in - T_out) / tau via least-squares slope.
+          5. Persist tau plus fit metadata.
+
+        Returns the meta dict so the caller (button press) can log it.
+        """
+        if not self._thermal_loaded:
+            await self._async_load_thermal_state()
+
+        # Recorder lookup needs the published entity_ids of our own
+        # aggregate sensors. They might have been renamed by the user,
+        # so we resolve through the entity registry by unique_id.
+        agg_t_eid = self._resolve_entity_id(f"extraflame_{stove_id}_aggregate_room_temp")
+        outdoor_eid = self._resolve_entity_id(f"extraflame_{stove_id}_outdoor_temperature")
+        state_eid = self._resolve_entity_id(f"extraflame_{stove_id}_state_label")
+        if not (agg_t_eid and outdoor_eid and state_eid):
+            return {"error": "missing_aggregate_or_outdoor_or_state_entity"}
+
+        from homeassistant.components.recorder import get_instance
+        from homeassistant.components.recorder.history import get_significant_states
+
+        recorder = get_instance(self.hass)
+        end = dt_util.utcnow()
+        start = end - _timedelta(days=THERMAL_LEARN_DAYS)
+        try:
+            history = await recorder.async_add_executor_job(
+                get_significant_states,
+                self.hass,
+                start,
+                end,
+                [agg_t_eid, outdoor_eid, state_eid],
+                None,  # filters
+                True,  # include_start_time_state
+                False,  # significant_changes_only
+                False,  # minimal_response
+                False,  # no_attributes
+                False,  # compressed_state_format
+            )
+        except Exception as e:  # noqa: BLE001
+            _LOGGER.warning("inertia fit: recorder query failed: %s", e)
+            return {"error": f"recorder_query_failed: {e}"}
+
+        # Coerce history to (ts, value/state) lists
+        def _coerce(eid: str) -> list[tuple[float, str]]:
+            rows = history.get(eid) or []
+            out: list[tuple[float, str]] = []
+            for s in rows:
+                try:
+                    out.append((s.last_updated.timestamp(), s.state))
+                except Exception:  # noqa: BLE001
+                    continue
+            return out
+
+        t_in_raw = _coerce(agg_t_eid)
+        t_out_raw = _coerce(outdoor_eid)
+        state_raw = _coerce(state_eid)
+        if not (t_in_raw and t_out_raw and state_raw):
+            return {"error": "empty_history"}
+
+        # Build a "stove burning" timeline: True between any "Work" /
+        # "Modulation" state up until COOLDOWN_AFTER_STOVE_S past it.
+        burning_until = 0.0
+        burning_ranges: list[tuple[float, float]] = []
+        cur_start: float | None = None
+        for ts, st in state_raw:
+            if st in ("Work", "Modulation"):
+                if cur_start is None:
+                    cur_start = ts
+                burning_until = ts + THERMAL_COOLDOWN_AFTER_STOVE_S
+            else:
+                if cur_start is not None:
+                    burning_ranges.append((cur_start, burning_until))
+                    cur_start = None
+        if cur_start is not None:
+            burning_ranges.append((cur_start, burning_until))
+
+        def _is_burning(ts: float) -> bool:
+            for s, e in burning_ranges:
+                if s <= ts <= e:
+                    return True
+            return False
+
+        # Interpolation on demand for irregular series
+        def _interp(series: list[tuple[float, str]], ts: float) -> float | None:
+            # Linear scan is fine - we resample at most a few thousand
+            # points and Recorder rows tend to be sparse already.
+            prev = None
+            for sts, sval in series:
+                try:
+                    v = float(sval)
+                except (TypeError, ValueError):
+                    continue
+                if v != v:
+                    continue
+                if sts <= ts:
+                    prev = (sts, v)
+                else:
+                    if prev is None:
+                        return v
+                    p_ts, p_v = prev
+                    if sts == p_ts:
+                        return p_v
+                    f = (ts - p_ts) / (sts - p_ts)
+                    return p_v + (v - p_v) * f
+            return prev[1] if prev else None
+
+        # Resample uniformly
+        grid: list[tuple[float, float, float]] = []
+        cur = start.timestamp()
+        end_ts = end.timestamp()
+        while cur <= end_ts:
+            if not _is_burning(cur):
+                t_in = _interp(t_in_raw, cur)
+                t_out = _interp(t_out_raw, cur)
+                if t_in is not None and t_out is not None:
+                    grid.append((cur, t_in, t_out))
+            cur += THERMAL_RESAMPLE_SECONDS
+
+        # Compute (dT/dt, delta) pairs from adjacent grid points
+        pairs: list[tuple[float, float]] = []
+        for i in range(1, len(grid)):
+            ts_a, tin_a, tout_a = grid[i - 1]
+            ts_b, tin_b, _tout_b = grid[i]
+            dt = ts_b - ts_a
+            if dt <= 0 or dt > THERMAL_RESAMPLE_SECONDS * 2:
+                continue
+            dTdt = (tin_b - tin_a) / dt  # deg C / second
+            delta = tin_a - tout_a       # at the left edge
+            pairs.append((dTdt, delta))
+
+        if len(pairs) < THERMAL_MIN_SAMPLES:
+            return {"error": f"not_enough_samples: {len(pairs)} < {THERMAL_MIN_SAMPLES}"}
+
+        # Least-squares regression through the origin: dTdt = -k * delta
+        # Equivalent fit: k = sum(dTdt * delta) / -sum(delta^2)
+        num = sum(d * dd for dd, d in pairs)  # sum(delta * dTdt)
+        den = sum(d * d for _dd, d in pairs)  # sum(delta^2)
+        if den <= 0:
+            return {"error": "degenerate_delta"}
+        slope = num / den  # this is -1/tau (deg C/s per deg C)
+        if slope >= 0:
+            # Inverted physics - means the indoor follows the outdoor
+            # the *wrong* way, usually a sign-flipped outdoor sensor or
+            # mostly-burning-stove history. Refuse the fit.
+            return {"error": f"non-physical_slope: {slope:.6f}"}
+        tau_s = -1.0 / slope
+        tau_h = tau_s / 3600.0
+
+        # RMSE in deg C/s, for the user to gauge quality
+        rmse_sq = sum((dd - slope * d) ** 2 for dd, d in pairs) / len(pairs)
+        rmse = math.sqrt(rmse_sq)
+
+        self._thermal_state[stove_id] = {
+            "tau_h": round(tau_h, 3),
+            "samples": len(pairs),
+            "rmse": rmse,
+            "last_fit_ts": _time.time(),
+            "history_days": THERMAL_LEARN_DAYS,
+        }
+        await self._async_save_thermal_state()
+        self.async_update_listeners()
+        return self.thermal_fit_meta(stove_id) | {"tau_h": tau_h}
 
     async def async_close(self) -> None:
         await self._client.close()

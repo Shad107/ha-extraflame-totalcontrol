@@ -66,6 +66,9 @@ async def async_setup_entry(
         entities.append(ExtraflamePelletAutonomyHoursSensor(coordinator, stove_id))
         entities.append(ExtraflameDampestRoomSensor(coordinator, stove_id))
         entities.append(ExtraflameDriestRoomSensor(coordinator, stove_id))
+        entities.append(ExtraflameApparentRoomTempSensor(coordinator, stove_id))
+        entities.append(ExtraflameRoomDewPointSensor(coordinator, stove_id))
+        entities.append(ExtraflameThermalTauSensor(coordinator, stove_id))
     async_add_entities(entities)
 
 
@@ -618,5 +621,111 @@ class ExtraflameDriestRoomSensor(
     def extra_state_attributes(self) -> dict:
         ent, _v = self.coordinator.driest_room()
         return {"entity_id": ent}
+
+
+class ExtraflameApparentRoomTempSensor(
+    CoordinatorEntity[ExtraflameCoordinator], SensorEntity
+):
+    """Steadman apparent room temperature, no-wind indoor variant.
+
+    Folds aggregate humidity into aggregate temperature. Captures the
+    "feels colder than the thermometer says" sensation when winter
+    pellet stoves drive RH below 30%: at T=20 deg C, RH=20% drops the
+    apparent temperature to ~17.5 deg C. Pair with the dew point
+    sensor for the cold-wall side of "froid humide".
+    """
+
+    _attr_has_entity_name = True
+    _attr_name = "Apparent room temperature"
+    _attr_icon = "mdi:thermometer-water"
+    _attr_device_class = SensorDeviceClass.TEMPERATURE
+    _attr_native_unit_of_measurement = UnitOfTemperature.CELSIUS
+    _attr_state_class = SensorStateClass.MEASUREMENT
+    _attr_suggested_display_precision = 1
+
+    def __init__(self, coordinator: ExtraflameCoordinator, stove_id: str) -> None:
+        super().__init__(coordinator)
+        self._stove_id = stove_id
+        self._attr_unique_id = f"extraflame_{stove_id}_apparent_room_temp"
+        stove = coordinator.data["stoves"][stove_id]["stove"]
+        self._attr_device_info = stove_device_info(stove)
+
+    @property
+    def native_value(self) -> float | None:
+        return self.coordinator.apparent_room_temperature(self._stove_id)
+
+
+class ExtraflameRoomDewPointSensor(
+    CoordinatorEntity[ExtraflameCoordinator], SensorEntity
+):
+    """Dew point of the aggregate room, plus a per-room breakdown.
+
+    The "humid cold" early warning. When dew point rises within a few
+    degrees of a cold wall's surface temperature, water condenses and
+    that wall starts to feel both cold and wet. Watch the per-room
+    breakdown over winter to spot the rooms heading toward mould before
+    a stain appears.
+    """
+
+    _attr_has_entity_name = True
+    _attr_name = "Aggregate dew point"
+    _attr_icon = "mdi:water-thermometer"
+    _attr_device_class = SensorDeviceClass.TEMPERATURE
+    _attr_native_unit_of_measurement = UnitOfTemperature.CELSIUS
+    _attr_state_class = SensorStateClass.MEASUREMENT
+    _attr_suggested_display_precision = 1
+
+    def __init__(self, coordinator: ExtraflameCoordinator, stove_id: str) -> None:
+        super().__init__(coordinator)
+        self._stove_id = stove_id
+        self._attr_unique_id = f"extraflame_{stove_id}_aggregate_dew_point"
+        stove = coordinator.data["stoves"][stove_id]["stove"]
+        self._attr_device_info = stove_device_info(stove)
+
+    @property
+    def native_value(self) -> float | None:
+        v, _ = self.coordinator.room_dew_point(self._stove_id)
+        return v
+
+    @property
+    def extra_state_attributes(self) -> dict:
+        _v, breakdown = self.coordinator.room_dew_point(self._stove_id)
+        return {"rooms": breakdown}
+
+
+class ExtraflameThermalTauSensor(
+    CoordinatorEntity[ExtraflameCoordinator], SensorEntity
+):
+    """Time constant of the home's first-order thermal RC model.
+
+    Big tau (15+ hours) = well-insulated brick home, the stove can rest
+    long stretches before the room cools. Small tau (3-5 hours) =
+    leaky envelope, the stove will need to run more aggressively.
+    Updated by pressing the "Learn inertia" button, which reads the
+    last 14 days of HA Recorder history (filters out stove-burning
+    periods) and fits the passive decay.
+    """
+
+    _attr_has_entity_name = True
+    _attr_name = "Thermal time constant"
+    _attr_icon = "mdi:home-thermometer"
+    _attr_native_unit_of_measurement = "h"
+    _attr_state_class = SensorStateClass.MEASUREMENT
+    _attr_suggested_display_precision = 2
+
+    def __init__(self, coordinator: ExtraflameCoordinator, stove_id: str) -> None:
+        super().__init__(coordinator)
+        self._stove_id = stove_id
+        self._attr_unique_id = f"extraflame_{stove_id}_thermal_tau_h"
+        stove = coordinator.data["stoves"][stove_id]["stove"]
+        self._attr_device_info = stove_device_info(stove)
+
+    @property
+    def native_value(self) -> float | None:
+        return self.coordinator.thermal_tau_h(self._stove_id)
+
+    @property
+    def extra_state_attributes(self) -> dict:
+        return self.coordinator.thermal_fit_meta(self._stove_id)
 
 

@@ -1,11 +1,12 @@
 {
   "domain": "extraflame_totalcontrol",
   "name": "Extraflame TotalControl 2.0",
-  "version": "0.2.7",
+  "version": "0.3.0",
   "documentation": "https://github.com/Shad107/ha-extraflame-totalcontrol",
   "issue_tracker": "https://github.com/Shad107/ha-extraflame-totalcontrol/issues",
   "codeowners": ["@Shad107"],
   "config_flow": true,
   "requirements": ["httpx>=0.27"],
+  "after_dependencies": ["recorder"],
   "iot_class": "cloud_polling"
 }

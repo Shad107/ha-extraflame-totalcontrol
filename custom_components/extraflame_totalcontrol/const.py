@@ -4,7 +4,7 @@ CONF_PASSWORD = "password"
 CONF_POLL_INTERVAL = "poll_interval"
 DEFAULT_POLL_INTERVAL = 30
 
-VERSION = "0.2.7"
+VERSION = "0.3.0"
 
 # Default preset recipes. Each preset is editable via the options flow
 # (Settings → Devices → Extraflame → Configure). "enabled" toggles its
@@ -81,6 +81,24 @@ CONF_HUMIDITY_COMFORT_LOW_PCT = "humidity_comfort_low_pct"
 CONF_HUMIDITY_COMFORT_HIGH_PCT = "humidity_comfort_high_pct"
 DEFAULT_HUMIDITY_COMFORT_LOW_PCT = 30.0
 DEFAULT_HUMIDITY_COMFORT_HIGH_PCT = 65.0
+
+# v0.3.0 - thermal RC model fit (inertia learner).
+# Reads the last N days of indoor+outdoor temperatures from HA Recorder,
+# filters out periods when the stove was burning (running/cooldown), and
+# fits dT/dt = -(T_in - T_out)/tau on the natural drift. Tau (the time
+# constant in hours) tells you "if the heating stops, how long before
+# the room loses 1/e ~ 63% of its delta with the outdoors". Big tau =
+# well-insulated home, small tau = leaky envelope.
+#
+# Why this works year-round: even in summer the indoor temperature
+# tracks the outdoor diurnal cycle through the envelope. The decay
+# constant of that tracking IS the thermal time constant. No stove
+# needed - just patience and enough recorder history.
+THERMAL_STORE_VERSION = 1
+THERMAL_LEARN_DAYS = 14            # history window for the fit
+THERMAL_RESAMPLE_SECONDS = 300     # 5-minute resampling grid
+THERMAL_COOLDOWN_AFTER_STOVE_S = 3600  # skip 1h after stove last burned
+THERMAL_MIN_SAMPLES = 50           # below this, fit is meaningless
 
 # Mapping inspired by the Micronova mainboard state codes commonly seen on
 # Extraflame / La Nordica / MCZ / Ravelli pellet stoves. Verified on a
