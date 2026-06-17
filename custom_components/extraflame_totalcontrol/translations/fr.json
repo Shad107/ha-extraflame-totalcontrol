@@ -1,0 +1,106 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "Extraflame TotalControl 2.0",
+        "description": "Connecter Home Assistant à votre poêle à granulés La Nordica-Extraflame via le compte cloud officiel TotalControl 2.0.",
+        "data": {
+          "username": "Email du compte",
+          "password": "Mot de passe",
+          "poll_interval": "Intervalle de rafraîchissement (secondes)"
+        },
+        "data_description": {
+          "username": "Le même email que vous utilisez dans l'application mobile TotalControl 2.0.",
+          "password": "Le même mot de passe que vous utilisez dans l'application mobile TotalControl 2.0.",
+          "poll_interval": "Fréquence de rafraîchissement de l'état du poêle. 30 s est un bon défaut ; une valeur plus élevée allège l'API."
+        }
+      }
+    },
+    "error": {
+      "invalid_auth": "Identifiants invalides",
+      "cannot_connect": "Impossible de joindre appapi.extraflame.it"
+    },
+    "abort": {
+      "already_configured": "Ce compte est déjà configuré"
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "Extraflame — Configuration",
+        "description": "Ajustez le comportement de l'intégration. Le formulaire est organisé en trois sections :\n\n**1. Presets climate** — quatre raccourcis (Eco / Silence / Confort / Boost) que vous pouvez activer dans `climate.preset_modes`. Décochez-en un pour le retirer du dashboard.\n\n**2. Auto-modulation** — bornes du pilotage automatique de la puissance via `switch.<stove>_auto_modulation`. P1 est volontairement évité par défaut (les spécialistes déconseillent de faire tourner un poêle à granulés au minimum en continu — mauvaise combustion, suie, dépôts).\n\n**3. Agrégation de capteurs** — récupérez température et humidité depuis n'importe quel capteur déjà connu de HA (têtes Tado, Aqara, Netatmo, ESPHome). La moyenne devient l'input de l'auto-modulation à la place de la sonde interne du poêle (qui est trop proche du brûleur et lit toujours trop chaud).\n\nLes changements sont pris en compte immédiatement — pas besoin de redémarrer HA.",
+        "data": {
+          "eco_enabled": "Eco — activé",
+          "eco_power": "Eco — niveau de puissance",
+          "eco_target_temp": "Eco — température cible (°C)",
+          "eco_fan_mode": "Eco — mode ventilation",
+          "eco_fan_speed": "Eco — vitesse manuelle ventilation",
+          "silence_enabled": "Silence — activé",
+          "silence_power": "Silence — niveau de puissance",
+          "silence_target_temp": "Silence — température cible (°C)",
+          "silence_fan_mode": "Silence — mode ventilation",
+          "silence_fan_speed": "Silence — vitesse manuelle ventilation",
+          "confort_enabled": "Confort — activé",
+          "confort_power": "Confort — niveau de puissance",
+          "confort_target_temp": "Confort — température cible (°C)",
+          "confort_fan_mode": "Confort — mode ventilation",
+          "confort_fan_speed": "Confort — vitesse manuelle ventilation",
+          "boost_enabled": "Boost — activé",
+          "boost_power": "Boost — niveau de puissance",
+          "boost_target_temp": "Boost — température cible (°C)",
+          "boost_fan_mode": "Boost — mode ventilation",
+          "boost_fan_speed": "Boost — vitesse manuelle ventilation",
+          "auto_min_power": "Auto-modulation — puissance min",
+          "auto_max_power": "Auto-modulation — puissance max",
+          "auto_deadband": "Auto-modulation — bande morte (°C)",
+          "temp_sensors": "Capteurs de température",
+          "humidity_sensors": "Capteurs d'humidité",
+          "aggregation_mode": "Mode d'agrégation",
+          "outdoor_temp_sensor": "Capteur de température extérieure"
+        },
+        "data_description": {
+          "eco_power": "1 = P1 (minimum) à 5 = P5 (max).",
+          "eco_target_temp": "Température de consigne appliquée au climat quand ce preset est choisi.",
+          "eco_fan_mode": "0 = Off, 1 = Auto, 2 = Manuel.",
+          "eco_fan_speed": "0 à 6, utilisé seulement quand le mode est Manuel.",
+          "silence_power": "1 = P1 à 5 = P5.",
+          "silence_target_temp": "Température de consigne quand ce preset est choisi.",
+          "silence_fan_mode": "0 = Off, 1 = Auto, 2 = Manuel.",
+          "silence_fan_speed": "0 à 6, utilisé seulement quand le mode est Manuel.",
+          "confort_power": "1 = P1 à 5 = P5.",
+          "confort_target_temp": "Température de consigne quand ce preset est choisi.",
+          "confort_fan_mode": "0 = Off, 1 = Auto, 2 = Manuel.",
+          "confort_fan_speed": "0 à 6, utilisé seulement quand le mode est Manuel.",
+          "boost_power": "1 = P1 à 5 = P5.",
+          "boost_target_temp": "Température de consigne quand ce preset est choisi.",
+          "boost_fan_mode": "0 = Off, 1 = Auto, 2 = Manuel.",
+          "boost_fan_speed": "0 à 6, utilisé seulement quand le mode est Manuel.",
+          "auto_min_power": "Plancher du niveau choisi automatiquement par HA. Par défaut P2 pour éviter P1 (combustion incomplète, suie). Valeurs autorisées : 1 à 5.",
+          "auto_max_power": "Plafond du niveau choisi automatiquement. Par défaut P5. Valeurs autorisées : 1 à 5.",
+          "auto_deadband": "Hystérésis (°C) pour éviter de changer de puissance à la moindre fluctuation. 0.3 °C est un bon défaut. Valeurs autorisées : 0 à 2.",
+          "temp_sensors": "Sélection multiple parmi tous les capteurs HA avec device_class temperature. Leur moyenne devient sensor.<stove>_aggregate_room_temperature, utilisé par l'auto-modulation. Sélectionnez vos têtes Tado, vos sondes Aqara, le Netatmo intérieur — tout ce qui vous semble pertinent.",
+          "humidity_sensors": "Sélection multiple parmi tous les capteurs HA avec device_class humidity. Moyenne dans sensor.<stove>_aggregate_room_humidity. Non utilisé pour piloter le poêle encore — exposé pour dashboards et automations humidité futures.",
+          "aggregation_mode": "Comment combiner les sources de température : moyenne pondérée (équipondérée, défaut), minimum (réchauffer la pièce la plus froide en premier), maximum (confort = la pièce la plus chaude), poêle seul (revenir au comportement v0.1.x et ignorer les externes).",
+          "outdoor_temp_sensor": "Capteur unique servant de référence extérieure pour le calcul delta intérieur/extérieur et le futur apprentissage d'inertie thermique (v0.3.0). Choisissez votre module Netatmo extérieur, une sonde Tado outdoor, ou à défaut le capteur Météo France."
+        }
+      }
+    }
+  },
+  "selector": {
+    "fan_mode": {
+      "options": {
+        "0": "Off",
+        "1": "Auto",
+        "2": "Manuel"
+      }
+    },
+    "aggregation_mode": {
+      "options": {
+        "weighted_avg": "Moyenne pondérée (défaut)",
+        "min": "Minimum (réchauffer la pièce la plus froide)",
+        "max": "Maximum (confort)",
+        "stove_only": "Sonde poêle seule (compat v0.1.x)"
+      }
+    }
+  }
+}
